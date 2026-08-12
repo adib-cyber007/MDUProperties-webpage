@@ -1,0 +1,6 @@
+.env
+data/store.json
+data/*.tmp
+node_modules/
+npm-debug.log*
+.playwright-mcp/
