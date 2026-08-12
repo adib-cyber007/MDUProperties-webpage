@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 
 const PORT = Number(process.env.PORT || 43821);
 const HOST = process.env.HOST || '127.0.0.1';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'aaranya-demo';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.VERCEL ? '' : 'aaranya-demo');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
@@ -324,6 +324,7 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { authenticated: Boolean(getSession(req)) });
   }
   if (req.method === 'POST' && url.pathname === '/api/login') {
+    if (!ADMIN_PASSWORD) return sendJson(res, 503, { error: 'Owner access is not configured. Set ADMIN_PASSWORD in the production environment.' });
     const key = req.socket.remoteAddress || 'local';
     const attempt = loginAttempts.get(key) || { count: 0, reset: 0 };
     if (attempt.reset > Date.now() && attempt.count >= 7) return sendJson(res, 429, { error: 'Too many attempts. Try again in a few minutes.' });
