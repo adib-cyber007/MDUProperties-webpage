@@ -14,6 +14,7 @@ const STORE_FILE = path.join(DATA_DIR, 'store.json');
 const SESSION_TTL = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 const loginAttempts = new Map();
+let serverlessStore = null;
 
 function isoDaysAgo(days, hour = 10) {
   const date = new Date();
@@ -136,16 +137,25 @@ function defaultData() {
 }
 
 function ensureStore() {
+  if (process.env.VERCEL) return;
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_FILE)) writeStore(defaultData());
 }
 
 function readStore() {
+  if (process.env.VERCEL) {
+    serverlessStore ||= defaultData();
+    return serverlessStore;
+  }
   ensureStore();
   return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
 }
 
 function writeStore(data) {
+  if (process.env.VERCEL) {
+    serverlessStore = data;
+    return;
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const temp = `${STORE_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(data, null, 2), 'utf8');
