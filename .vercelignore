@@ -1,0 +1,6 @@
+# Runtime data is intentionally excluded: Vercel instances must start from the
+# built-in seed collection until a durable data store is connected.
+data/store.json
+data/*.tmp
+.playwright-mcp/
+.vercel/
