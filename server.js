@@ -29,12 +29,12 @@ function image(id, width = 1600) {
 function defaultData() {
   return {
     settings: {
-      brandName: 'Aaranya Built Homes',
-      whatsapp: '919876543210',
-      phone: '+91 98765 43210',
-      email: 'hello@aaranyahomes.in',
-      instagram: 'https://instagram.com/aaranyahomes',
-      officeAddress: '12, Lavelle Road, Bengaluru, Karnataka 560001',
+      brandName: 'Madurai Dream Properties',
+      whatsapp: '919442636313',
+      phone: '+91 94426 36313',
+      email: '',
+      instagram: '',
+      officeAddress: '',
       newDays: 14,
       updatedDays: 7
     },

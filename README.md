@@ -1,4 +1,4 @@
-# Aaranya Built Homes
+# Madurai Dream Properties
 
 A complete boutique real-estate listing site with a single-owner dashboard. It runs on Node.js without third-party packages.
 

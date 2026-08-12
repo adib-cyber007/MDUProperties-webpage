@@ -47,6 +47,20 @@ function whatsappHref(listingTitle = '') {
   return `https://wa.me/${state.settings?.whatsapp || ''}?text=${encodeURIComponent(message)}`;
 }
 
+function emailHref(listingTitle = '') {
+  if (!state.settings?.email) return '';
+  const subject = listingTitle ? `Enquiry about ${listingTitle}` : `Property enquiry for ${state.settings.brandName}`;
+  return `mailto:${state.settings.email}?subject=${encodeURIComponent(subject)}`;
+}
+
+function contactButtons(listingTitle = '', light = false) {
+  const buttons = [];
+  if (state.settings?.whatsapp) buttons.push(`<a class="btn ${light ? 'btn-bronze' : ''}" href="${whatsappHref(listingTitle)}" target="_blank" rel="noreferrer">${icon('whatsapp')} WhatsApp</a>`);
+  if (state.settings?.phone) buttons.push(`<a class="btn ${light ? 'btn-light' : 'btn-outline'}" href="${phoneHref(state.settings.phone)}">${icon('phone')} Call now</a>`);
+  if (state.settings?.email) buttons.push(`<a class="btn ${light ? 'btn-light' : 'btn-outline'}" href="${emailHref(listingTitle)}">${icon('mail')} Email</a>`);
+  return buttons.join('');
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -73,9 +87,9 @@ function navigate(path) {
 }
 
 function brandMarkup() {
-  return `<a class="brand" href="/" data-link aria-label="${escapeHtml(state.settings?.brandName || 'Aaranya Built Homes')} home">
+  return `<a class="brand" href="/" data-link aria-label="${escapeHtml(state.settings?.brandName || 'Madurai Dream Properties')} home">
     <img src="/mark.svg" alt="" width="34" height="34">
-    <span><strong>${escapeHtml(state.settings?.brandName || 'Aaranya Built Homes')}</strong><span>Builder-led residences</span></span>
+    <span><strong>${escapeHtml(state.settings?.brandName || 'Madurai Dream Properties')}</strong><span>Owner-managed properties</span></span>
   </a>`;
 }
 
@@ -88,8 +102,8 @@ function renderChrome() {
     <nav class="site-nav" aria-label="Main navigation">
       <a href="/" data-link class="${location.pathname === '/' ? 'active' : ''}">Home</a>
       <a href="/listings" data-link class="${location.pathname.startsWith('/listing') ? 'active' : ''}">Available homes</a>
-      <a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>
-      <a class="header-call" href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>
+      ${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}
+      ${state.settings.phone ? `<a class="header-call" href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>` : ''}
       ${adminRoute ? '<a href="/admin" data-link class="active">Owner</a>' : ''}
     </nav>
   </div>`;
@@ -98,11 +112,11 @@ function renderChrome() {
     <div class="footer-grid">
       <div>${brandMarkup()}<p>Newly built homes, planned and delivered with care. Every listing is managed directly by our team.</p></div>
       <div class="footer-column"><h3>Explore</h3><a href="/listings" data-link>Available homes</a><a href="/#approach" data-scroll>Our approach</a><a href="/admin" data-link>Owner sign in</a></div>
-      <div class="footer-column"><h3>Contact</h3><a href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a><a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a><a href="${whatsappHref()}" target="_blank" rel="noreferrer">WhatsApp us</a>${state.settings.instagram ? `<a href="${escapeHtml(state.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}<address>${escapeHtml(state.settings.officeAddress)}</address></div>
+      <div class="footer-column"><h3>Contact</h3>${state.settings.phone ? `<a href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>` : ''}${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}${state.settings.whatsapp ? `<a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer">WhatsApp us</a>` : ''}${state.settings.instagram ? `<a href="${escapeHtml(state.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}${state.settings.officeAddress ? `<address>${escapeHtml(state.settings.officeAddress)}</address>` : ''}</div>
     </div>
-    <div class="footer-bottom"><span>© ${new Date().getFullYear()} ${escapeHtml(state.settings.brandName)}.</span><span>Direct from the builder · Bengaluru</span></div>
+    <div class="footer-bottom"><span>© ${new Date().getFullYear()} ${escapeHtml(state.settings.brandName)}.</span><span>Owner-managed · Direct enquiries</span></div>
   </div>`;
-  floating.innerHTML = `<a class="floating-whatsapp" href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp us</span></a>`;
+  floating.innerHTML = state.settings.whatsapp ? `<div class="mobile-contact-dock" aria-label="Quick contact"><a href="${phoneHref(state.settings.phone)}" aria-label="Call ${escapeHtml(state.settings.phone)}">${icon('phone')}<span>Call</span></a><a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp</span></a></div><a class="floating-whatsapp" href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp us</span></a>` : '';
 
   const toggle = header.querySelector('.menu-toggle');
   toggle.addEventListener('click', () => {
@@ -133,28 +147,33 @@ function listingCard(listing) {
     <div class="card-body">
       <p class="card-location">${escapeHtml(listing.location)}</p>
       <div class="card-title-row"><h3 class="card-title"><a href="/listing/${encodeURIComponent(listing.id)}" data-link>${escapeHtml(listing.title)}</a></h3><p class="card-price">${formatPrice(listing.price)}</p></div>
-      <p class="card-meta">${escapeHtml(listing.area)} · ${listing.status === 'ready' ? 'Available now' : 'Build in progress'}</p>
+      <div class="card-meta"><span>${escapeHtml(listing.area)}</span><span>${listing.status === 'ready' ? 'Available now' : 'Build in progress'}</span><a href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View details for ${escapeHtml(listing.title)}">View details ${icon('arrow')}</a></div>
     </div>
   </article>`;
 }
 
 function renderHome() {
   state.currentListing = null;
-  const featured = state.listings.filter(item => item.featured).slice(0, 3);
+  const selectedFeatured = state.listings.filter(item => item.featured);
+  const featured = (selectedFeatured.length ? selectedFeatured : state.listings).slice(0, 3);
   const heroListing = featured[0] || state.listings[0];
-  document.title = `${state.settings.brandName} — New homes in Bengaluru`;
-  setMeta('Newly built, thoughtfully planned homes in Bengaluru, directly from the builder.');
-  main.innerHTML = `<section class="hero">
-    <div class="hero-copy reveal">
-      <span class="eyebrow">Built in Bengaluru</span>
-      <h1>Homes with <em>room to live.</em></h1>
-      <p>Newly built residences shaped by light, landscape, and practical family life. See every detail, speak directly with the builder.</p>
-      <div class="hero-actions"><a class="btn" href="/listings" data-link>Browse available homes ${icon('arrow')}</a><a class="btn btn-outline" href="${whatsappHref()}" target="_blank" rel="noreferrer">Ask on WhatsApp</a></div>
-    </div>
-    <a class="hero-visual" href="/listing/${encodeURIComponent(heroListing.id)}" data-link aria-label="View ${escapeHtml(heroListing.title)}">
+  const heroVisual = heroListing ? `<a class="hero-visual" href="/listing/${encodeURIComponent(heroListing.id)}" data-link aria-label="View ${escapeHtml(heroListing.title)}">
       <img src="${escapeHtml(heroListing.mainImage)}" alt="${escapeHtml(heroListing.title)}, a newly built home in ${escapeHtml(heroListing.location)}" width="1400" height="1200">
       <div class="hero-caption"><span>${heroListing.status === 'ready' ? 'Ready to visit' : 'Now in progress'}</span><strong>${escapeHtml(heroListing.title)} · ${escapeHtml(heroListing.location)}</strong></div>
-    </a>
+    </a>` : `<div class="hero-visual hero-visual-empty">
+      <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=82" alt="A thoughtfully designed contemporary home" width="1400" height="1200">
+      <div class="hero-caption"><span>Portfolio update</span><strong>New owner-listed homes are coming soon.</strong></div>
+    </div>`;
+  document.title = `${state.settings.brandName} — Owner-managed property listings`;
+  setMeta('Explore verified, owner-managed property listings with direct WhatsApp and phone contact.');
+  main.innerHTML = `<section class="hero">
+    <div class="hero-copy reveal">
+      <span class="eyebrow">Owner-led property service</span>
+      <h1>Homes with <em>room to live.</em></h1>
+      <p>Newly built residences shaped by light, landscape, and practical family life. See every detail, speak directly with the owner team.</p>
+      <div class="hero-actions"><a class="btn" href="/listings" data-link>Browse available homes ${icon('arrow')}</a><a class="btn btn-outline" href="${whatsappHref()}" target="_blank" rel="noreferrer">Ask on WhatsApp</a></div>
+    </div>
+    ${heroVisual}
   </section>
   <section class="trust-strip" aria-label="How we work"><div class="trust-strip-inner">
     <div class="trust-point"><span>01</span><div><strong>One accountable builder</strong><small>No brokers or third-party listings</small></div></div>
@@ -163,7 +182,7 @@ function renderHome() {
   </div></section>
   <section class="listings-section"><div class="container">
     <div class="section-top"><div><span class="eyebrow">Available now</span><h2 class="section-heading small">A small, considered collection.</h2></div><a class="btn btn-outline" href="/listings" data-link>See all homes ${icon('arrow')}</a></div>
-    <div class="listing-grid">${featured.map(listingCard).join('')}</div>
+    <div class="listing-grid">${featured.length ? featured.map(listingCard).join('') : '<div class="empty-state"><h2>New homes are being prepared.</h2><p>Contact the owner directly to hear about upcoming availability.</p></div>'}</div>
   </div></section>
   <section id="approach" class="philosophy"><div class="container philosophy-grid">
     <div><span class="eyebrow">How we build</span><h2>Quiet choices. Enduring homes.</h2></div>
@@ -173,13 +192,13 @@ function renderHome() {
       <article class="principle"><span>C</span><div><h3>Fewer, better homes</h3><p>A deliberately small portfolio lets our team stay close to the work and the people buying it.</p></div></article>
     </div>
   </div></section>
-  <section class="contact-band"><div class="container contact-band-inner"><div><span class="eyebrow">Begin a conversation</span><h2>Looking for your next home?</h2><p>Tell us the neighbourhood, size, and timeline you have in mind. You’ll speak with someone who knows each home first-hand.</p></div><div class="contact-actions"><a class="btn" href="${whatsappHref()}" target="_blank" rel="noreferrer">${icon('whatsapp')} WhatsApp us</a><a class="btn btn-light" href="${phoneHref(state.settings.phone)}">${icon('phone')} Call ${escapeHtml(state.settings.phone)}</a></div></div></section>`;
+  <section class="contact-band"><div class="container contact-band-inner"><div><span class="eyebrow">Begin a conversation</span><h2>Looking for your next home?</h2><p>Tell us the neighbourhood, size, and timeline you have in mind. You’ll speak with someone who knows each home first-hand.</p></div><div class="contact-actions">${contactButtons()}</div></div></section>`;
 }
 
 function renderListings() {
   state.currentListing = null;
   document.title = `Available homes — ${state.settings.brandName}`;
-  setMeta('Browse newly built homes in Bengaluru. Filter by build status, neighbourhood, and price.');
+  setMeta('Browse owner-managed homes. Filter by build status, neighbourhood, and price.');
   const locations = [...new Set(state.listings.map(item => item.location))].sort();
   main.innerHTML = `<section class="page-hero"><div class="container"><span class="eyebrow">The collection</span><h1>Find a home that fits.</h1><p>Every property here is managed directly by our team. Filter the collection, then call or message us for plans, specifications, and a visit.</p></div></section>
   <section class="filter-bar" aria-label="Listing filters"><form class="container filters" id="filter-form">
@@ -232,10 +251,10 @@ function renderListing(id) {
   main.innerHTML = `<article>
     <header class="detail-hero"><img src="${escapeHtml(listing.mainImage)}" alt="Exterior of ${escapeHtml(listing.title)} in ${escapeHtml(listing.location)}" width="1800" height="1100"><div class="detail-hero-content"><div class="card-badges">${badges(listing)}</div><h1>${escapeHtml(listing.title)}</h1><p class="detail-hero-place">${escapeHtml(listing.address || listing.location)}</p></div></header>
     <section class="container detail-summary"><div><div class="detail-facts"><div class="detail-fact"><span>Asking price</span><strong>${formatPrice(listing.price)}</strong></div><div class="detail-fact"><span>Built area</span><strong>${escapeHtml(listing.area)}</strong></div><div class="detail-fact"><span>Availability</span><strong>${listing.status === 'ready' ? 'Ready now' : 'In progress'}</strong></div></div><span class="eyebrow">About this home</span><div class="prose">${listing.description}</div></div>
-      <aside class="detail-aside"><h2>See it first-hand.</h2><p>Ask for the floor plan, full specification, or arrange a visit directly with our team.</p><a class="btn" href="${whatsappHref(listing.title)}" target="_blank" rel="noreferrer">${icon('whatsapp')} Ask on WhatsApp</a><a class="btn btn-outline" href="${phoneHref(state.settings.phone)}">${icon('phone')} Call the owner</a><a class="btn btn-outline" href="mailto:${escapeHtml(state.settings.email)}?subject=${encodeURIComponent(`Enquiry about ${listing.title}`)}">${icon('mail')} Send an email</a></aside>
+      <aside class="detail-aside"><span class="detail-aside-label">Direct owner contact</span><h2>See it first-hand.</h2><p>Ask for the floor plan, full specification, or arrange a visit directly with our team.</p>${contactButtons(listing.title)}</aside>
     </section>
     ${galleryMarkup}${timelineMarkup}${mapMarkup}
-    <section class="bottom-contact"><div class="container bottom-contact-inner"><div><h2>Would you like to walk through?</h2><p>Visits are arranged directly with the owner team. No broker hand-off.</p></div><div class="bottom-contact-actions"><a class="btn btn-bronze" href="${whatsappHref(listing.title)}" target="_blank" rel="noreferrer">${icon('whatsapp')} WhatsApp</a><a class="btn btn-light" href="${phoneHref(state.settings.phone)}">${icon('phone')} Call now</a><a class="btn btn-light" href="mailto:${escapeHtml(state.settings.email)}?subject=${encodeURIComponent(`Enquiry about ${listing.title}`)}">${icon('mail')} Email</a></div></div></section>
+    <section class="bottom-contact"><div class="container bottom-contact-inner"><div><h2>Would you like to walk through?</h2><p>Visits are arranged directly with the owner team. No broker hand-off.</p></div><div class="bottom-contact-actions">${contactButtons(listing.title, true)}</div></div></section>
   </article>`;
   renderChrome();
   if (listing.zoomEnabled) document.querySelectorAll('[data-lightbox-index]').forEach(button => button.addEventListener('click', () => openLightbox(allGallery, Number(button.dataset.lightboxIndex), listing.title)));
@@ -307,7 +326,10 @@ function drawAdminTab() {
 
 function drawAdminListings() {
   const listings = state.admin.data.listings;
-  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>Your homes</h1><p>${listings.length} published ${listings.length === 1 ? 'listing' : 'listings'}</p></div><button class="btn" id="add-listing" type="button">Add a listing</button></div><div class="admin-panel"><div class="admin-list">${listings.map(listing => `<article class="admin-listing"><img src="${escapeHtml(listing.mainImage)}" alt=""><div><h3>${escapeHtml(listing.title)}</h3><p>${escapeHtml(listing.location)} · ${formatPrice(listing.price)} · ${listing.status === 'ready' ? 'Ready' : 'Under construction'}</p></div><div class="admin-listing-actions"><a class="btn btn-outline btn-small" href="/listing/${encodeURIComponent(listing.id)}" data-link>View</a><button class="btn btn-outline btn-small" type="button" data-edit="${escapeHtml(listing.id)}">Edit</button><button class="btn btn-danger btn-small" type="button" data-delete="${escapeHtml(listing.id)}">Delete</button></div></article>`).join('')}</div></div>`;
+  const readyCount = listings.filter(item => item.status === 'ready').length;
+  const buildCount = listings.length - readyCount;
+  const featuredCount = listings.filter(item => item.featured).length;
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><span class="eyebrow">Portfolio overview</span><h1>Your homes</h1><p>Manage every detail buyers see on the public site.</p></div><button class="btn" id="add-listing" type="button">Add a listing</button></div><div class="admin-stats"><div><span>Published</span><strong>${listings.length}</strong></div><div><span>Ready for sale</span><strong>${readyCount}</strong></div><div><span>In progress</span><strong>${buildCount}</strong></div><div><span>Homepage</span><strong>${featuredCount}</strong></div></div><div class="admin-panel"><div class="admin-list">${listings.map(listing => `<article class="admin-listing"><img src="${escapeHtml(listing.mainImage)}" alt=""><div><div class="admin-listing-flags">${listing.featured ? '<span>Homepage</span>' : ''}<span>${listing.status === 'ready' ? 'Ready' : 'Building'}</span></div><h3>${escapeHtml(listing.title)}</h3><p>${escapeHtml(listing.location)} · ${formatPrice(listing.price)}</p><small>Updated ${formatDate(listing.updatedAt)}</small></div><div class="admin-listing-actions"><a class="btn btn-outline btn-small" href="/listing/${encodeURIComponent(listing.id)}" data-link>View</a><button class="btn btn-outline btn-small" type="button" data-edit="${escapeHtml(listing.id)}">Edit</button><button class="btn btn-danger btn-small" type="button" data-delete="${escapeHtml(listing.id)}">Delete</button></div></article>`).join('')}</div></div>`;
   document.querySelector('#add-listing').onclick = () => { state.admin.editing = 'new'; drawAdminTab(); };
   document.querySelectorAll('[data-edit]').forEach(button => button.onclick = () => { state.admin.editing = button.dataset.edit; drawAdminTab(); });
   document.querySelectorAll('[data-delete]').forEach(button => button.onclick = () => confirmDelete(button.dataset.delete));
@@ -457,8 +479,8 @@ function drawSettingsForm() {
     <div class="field full"><label for="brandName">Business name</label><input id="brandName" name="brandName" value="${escapeHtml(settings.brandName)}" required></div>
     <div class="field"><label for="whatsapp">WhatsApp number</label><input id="whatsapp" name="whatsapp" value="${escapeHtml(settings.whatsapp)}" inputmode="tel" required><small>Country code + number, digits only.</small></div>
     <div class="field"><label for="phone">Display phone number</label><input id="phone" name="phone" value="${escapeHtml(settings.phone)}" required></div>
-    <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" value="${escapeHtml(settings.email)}" required></div>
-    <div class="field"><label for="instagram">Instagram URL</label><input id="instagram" name="instagram" type="url" value="${escapeHtml(settings.instagram)}"></div>
+    <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" value="${escapeHtml(settings.email)}" placeholder="Optional"><small>Leave blank to hide email links sitewide.</small></div>
+    <div class="field"><label for="instagram">Instagram URL</label><input id="instagram" name="instagram" type="url" value="${escapeHtml(settings.instagram)}" placeholder="Optional"><small>Use the full URL for the owner’s actual account.</small></div>
     <div class="field full"><label for="officeAddress">Office address</label><textarea id="officeAddress" name="officeAddress">${escapeHtml(settings.officeAddress)}</textarea></div>
   </div><div class="form-section"><h2>Automatic freshness tags</h2><p>New and Updated tags disappear automatically after the periods below.</p></div><div class="form-grid"><div class="field"><label for="newDays">New listing period (days)</label><input id="newDays" name="newDays" type="number" min="1" max="90" value="${settings.newDays}"></div><div class="field"><label for="updatedDays">Updated period (days)</label><input id="updatedDays" name="updatedDays" type="number" min="1" max="30" value="${settings.updatedDays}"></div></div><div class="form-actions"><button class="btn" type="submit">Save site settings</button></div></form>`;
   document.querySelector('#settings-form').addEventListener('submit', async event => {
