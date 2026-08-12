@@ -423,8 +423,12 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-ensureStore();
-server.listen(PORT, HOST, () => {
-  console.log(`Aaranya Built Homes is running at http://${HOST}:${PORT}`);
-  if (!process.env.ADMIN_PASSWORD) console.log('Demo owner password: aaranya-demo (set ADMIN_PASSWORD before production use)');
-});
+if (require.main === module) {
+  ensureStore();
+  server.listen(PORT, HOST, () => {
+    console.log(`Madurai Dream Properties is running at http://${HOST}:${PORT}`);
+    if (!process.env.ADMIN_PASSWORD) console.log('Demo owner password: aaranya-demo (set ADMIN_PASSWORD before production use)');
+  });
+}
+
+module.exports = server;

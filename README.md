@@ -30,3 +30,7 @@ Runtime data is written to `data/store.json` and intentionally ignored by git. D
 ## Production notes
 
 Set `ADMIN_PASSWORD`, serve behind HTTPS, back up `data/store.json`, and use durable persistent storage on your host. Image uploads are stored as compressed data URLs; for a much larger inventory, connect the same upload fields to object storage.
+
+### Vercel deployment
+
+The included `api/index.js` and `vercel.json` deploy the public website and API routes to Vercel while preserving the current single-page routes. Vercel’s filesystem is read-only and ephemeral, so do **not** use `data/store.json` as the production database there: connect the owner dashboard to durable storage (for example Vercel Blob, Postgres, or Supabase) before relying on published listing changes. Set `ADMIN_PASSWORD` in Vercel’s Production Environment Variables before sharing the owner login.
