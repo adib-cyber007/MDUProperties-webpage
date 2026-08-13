@@ -8,6 +8,9 @@ const crypto = require('node:crypto');
 const PORT = Number(process.env.PORT || 43821);
 const HOST = process.env.HOST || '127.0.0.1';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.VERCEL ? '' : 'aaranya-demo');
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
@@ -137,12 +140,45 @@ function defaultData() {
 }
 
 function ensureStore() {
-  if (process.env.VERCEL) return;
+  if (process.env.VERCEL || USE_SUPABASE) return;
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(STORE_FILE)) writeStore(defaultData());
+  if (!fs.existsSync(STORE_FILE)) {
+    fs.writeFileSync(STORE_FILE, JSON.stringify(defaultData(), null, 2), 'utf8');
+  }
 }
 
-function readStore() {
+function validateStore(data) {
+  if (!data || typeof data !== 'object' || !data.settings || !Array.isArray(data.listings)) {
+    throw new Error('Supabase returned an invalid site store.');
+  }
+  return data;
+}
+
+async function supabaseRequest(resource, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${resource}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Supabase request failed (${response.status}): ${detail.slice(0, 500)}`);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+async function readStore() {
+  if (USE_SUPABASE) {
+    const rows = await supabaseRequest('site_store?select=data&id=eq.primary');
+    if (rows.length) return validateStore(rows[0].data);
+    const seed = defaultData();
+    await writeStore(seed);
+    return seed;
+  }
   if (process.env.VERCEL) {
     serverlessStore ||= defaultData();
     return serverlessStore;
@@ -151,7 +187,18 @@ function readStore() {
   return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
 }
 
-function writeStore(data) {
+async function writeStore(data) {
+  if (USE_SUPABASE) {
+    await supabaseRequest('site_store?on_conflict=id', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify([{ id: 'primary', data: validateStore(data), updated_at: new Date().toISOString() }])
+    });
+    return;
+  }
   if (process.env.VERCEL) {
     serverlessStore = data;
     return;
@@ -317,7 +364,7 @@ function securityHeaders() {
 
 async function handleApi(req, res, url) {
   if (!sameOrigin(req) && !['GET', 'HEAD'].includes(req.method)) return sendJson(res, 403, { error: 'Request origin was rejected.' });
-  const store = readStore();
+  const store = await readStore();
 
   if (req.method === 'GET' && url.pathname === '/api/listings') {
     return sendJson(res, 200, { listings: store.listings.map(item => publicListing(item, store.settings)) });
@@ -365,7 +412,7 @@ async function handleApi(req, res, url) {
     if (!requireAuth(req, res)) return;
     const listing = validateListing(await readJson(req), store.listings);
     store.listings.unshift(listing);
-    writeStore(store);
+    await writeStore(store);
     return sendJson(res, 201, { listing: publicListing(listing, store.settings) });
   }
   const listingMatch = url.pathname.match(/^\/api\/admin\/listings\/([^/]+)$/);
@@ -374,7 +421,7 @@ async function handleApi(req, res, url) {
     const index = store.listings.findIndex(item => item.id === decodeURIComponent(listingMatch[1]));
     if (index < 0) return sendJson(res, 404, { error: 'Listing not found.' });
     store.listings[index] = validateListing(await readJson(req), store.listings, store.listings[index]);
-    writeStore(store);
+    await writeStore(store);
     return sendJson(res, 200, { listing: publicListing(store.listings[index], store.settings) });
   }
   if (listingMatch && req.method === 'DELETE') {
@@ -382,7 +429,7 @@ async function handleApi(req, res, url) {
     const before = store.listings.length;
     store.listings = store.listings.filter(item => item.id !== decodeURIComponent(listingMatch[1]));
     if (store.listings.length === before) return sendJson(res, 404, { error: 'Listing not found.' });
-    writeStore(store);
+    await writeStore(store);
     return sendJson(res, 200, { deleted: true });
   }
   if (req.method === 'PUT' && url.pathname === '/api/admin/settings') {
@@ -398,7 +445,7 @@ async function handleApi(req, res, url) {
       newDays: Math.min(90, Math.max(1, Number(body.newDays) || 14)),
       updatedDays: Math.min(30, Math.max(1, Number(body.updatedDays) || 7))
     };
-    writeStore(store);
+    await writeStore(store);
     return sendJson(res, 200, { settings: store.settings });
   }
   return sendJson(res, 404, { error: 'API route not found.' });

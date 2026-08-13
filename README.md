@@ -2,6 +2,10 @@
 
 A complete boutique real-estate listing site with a single-owner dashboard. It runs on Node.js without third-party packages.
 
+## Durable listings with Supabase
+
+Production listings and contact settings live in Supabase's RLS-protected `public.site_store` table. Configure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as encrypted, server-side Vercel environment variables; the service-role credential must never be exposed to browser code. For local development, copy `.env.example` to `.env.local` and fill in the same values.
+
 ## Run locally
 
 ```powershell
