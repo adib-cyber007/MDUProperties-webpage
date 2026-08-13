@@ -164,16 +164,16 @@ async function supabaseRequest(resource, options = {}) {
       ...(options.headers || {})
     }
   });
+  const body = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Supabase request failed (${response.status}): ${detail.slice(0, 500)}`);
+    throw new Error(`Supabase request failed (${response.status}): ${body.slice(0, 500)}`);
   }
-  return response.status === 204 ? null : response.json();
+  return body ? JSON.parse(body) : null;
 }
 
 async function readStore() {
   if (USE_SUPABASE) {
-    const rows = await supabaseRequest('site_store?select=data&id=eq.primary');
+    const rows = await supabaseRequest('site_store?select=data&id=eq.primary') || [];
     if (rows.length) return validateStore(rows[0].data);
     const seed = defaultData();
     await writeStore(seed);
