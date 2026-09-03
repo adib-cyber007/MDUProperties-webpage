@@ -18,6 +18,19 @@ const SESSION_TTL = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 const loginAttempts = new Map();
 let serverlessStore = null;
+let lastSupabaseFailureAt = 0;
+
+function fallbackStore() {
+  serverlessStore ||= defaultData();
+  return serverlessStore;
+}
+
+function reportSupabaseFailure(error) {
+  const now = Date.now();
+  if (now - lastSupabaseFailureAt < 60000) return;
+  lastSupabaseFailureAt = now;
+  console.error('Supabase is unavailable; serving the temporary public fallback.', error);
+}
 
 function isoDaysAgo(days, hour = 10) {
   const date = new Date();
@@ -173,15 +186,19 @@ async function supabaseRequest(resource, options = {}) {
 
 async function readStore() {
   if (USE_SUPABASE) {
-    const rows = await supabaseRequest('site_store?select=data&id=eq.primary') || [];
-    if (rows.length) return validateStore(rows[0].data);
-    const seed = defaultData();
-    await writeStore(seed);
-    return seed;
+    try {
+      const rows = await supabaseRequest('site_store?select=data&id=eq.primary') || [];
+      if (rows.length) return validateStore(rows[0].data);
+      const seed = defaultData();
+      await writeStore(seed);
+      return seed;
+    } catch (error) {
+      reportSupabaseFailure(error);
+      return fallbackStore();
+    }
   }
   if (process.env.VERCEL) {
-    serverlessStore ||= defaultData();
-    return serverlessStore;
+    return fallbackStore();
   }
   ensureStore();
   return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
@@ -189,14 +206,19 @@ async function readStore() {
 
 async function writeStore(data) {
   if (USE_SUPABASE) {
-    await supabaseRequest('site_store?on_conflict=id', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates,return=minimal'
-      },
-      body: JSON.stringify([{ id: 'primary', data: validateStore(data), updated_at: new Date().toISOString() }])
-    });
+    try {
+      await supabaseRequest('site_store?on_conflict=id', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify([{ id: 'primary', data: validateStore(data), updated_at: new Date().toISOString() }])
+      });
+    } catch (error) {
+      reportSupabaseFailure(error);
+      throw Object.assign(new Error('Listing storage is temporarily unavailable. Your changes were not saved.'), { status: 503 });
+    }
     return;
   }
   if (process.env.VERCEL) {
