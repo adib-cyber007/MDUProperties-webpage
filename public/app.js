@@ -14,6 +14,13 @@ const footer = document.querySelector('#site-footer');
 const floating = document.querySelector('#floating-contact');
 const modalRoot = document.querySelector('#modal-root');
 
+
+main.style.paddingBottom="5px";
+
+footer.style.marginTop="25px";
+
+footer.style.paddingTop="10px";
+
 const icon = (name) => {
   const icons = {
     arrow: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
