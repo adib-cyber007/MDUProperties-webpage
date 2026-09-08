@@ -4,6 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { createTelegramBot } = require('./telegram-bot');
 
 const PORT = Number(process.env.PORT || 43821);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -11,12 +12,18 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.VERCEL ? '' : 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_OWNER_CHAT_ID = process.env.TELEGRAM_OWNER_CHAT_ID || '';
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+const TELEGRAM_API_SECRET = process.env.TELEGRAM_API_SECRET || '';
+const TELEGRAM_CONFIGURED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_OWNER_CHAT_ID && TELEGRAM_WEBHOOK_SECRET);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 const SESSION_TTL = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 const loginAttempts = new Map();
+const localTelegramStates = new Map();
 let serverlessStore = null;
 let lastSupabaseFailureAt = 0;
 
@@ -204,6 +211,25 @@ async function readStore() {
   return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
 }
 
+async function readStoreForManagement() {
+  if (USE_SUPABASE) {
+    try {
+      const rows = await supabaseRequest('site_store?select=data&id=eq.primary') || [];
+      if (rows.length) return validateStore(rows[0].data);
+      const seed = defaultData();
+      await writeStore(seed);
+      return seed;
+    } catch (error) {
+      reportSupabaseFailure(error);
+      throw Object.assign(new Error('Listing storage is temporarily unavailable. No management changes were made.'), { status: 503 });
+    }
+  }
+  if (process.env.VERCEL) {
+    throw Object.assign(new Error('Permanent listing storage is not configured.'), { status: 503 });
+  }
+  return readStore();
+}
+
 async function writeStore(data) {
   if (USE_SUPABASE) {
     try {
@@ -229,6 +255,43 @@ async function writeStore(data) {
   const temp = `${STORE_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(data, null, 2), 'utf8');
   fs.renameSync(temp, STORE_FILE);
+}
+
+async function loadTelegramState(ownerId) {
+  if (USE_SUPABASE) {
+    const rows = await supabaseRequest(`telegram_bot_state?select=conversation,last_update_id&owner_id=eq.${encodeURIComponent(ownerId)}`) || [];
+    if (rows.length) {
+      return {
+        conversation: rows[0].conversation || null,
+        lastUpdateId: Number(rows[0].last_update_id || 0)
+      };
+    }
+  }
+  return localTelegramStates.get(String(ownerId)) || { conversation: null, lastUpdateId: 0 };
+}
+
+async function saveTelegramState(ownerId, state) {
+  const normalized = {
+    conversation: state.conversation || null,
+    lastUpdateId: Number(state.lastUpdateId || 0)
+  };
+  if (USE_SUPABASE) {
+    await supabaseRequest('telegram_bot_state?on_conflict=owner_id', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify([{
+        owner_id: String(ownerId),
+        conversation: normalized.conversation,
+        last_update_id: normalized.lastUpdateId,
+        updated_at: new Date().toISOString()
+      }])
+    });
+    return;
+  }
+  localTelegramStates.set(String(ownerId), normalized);
 }
 
 function publicListing(listing, settings) {
@@ -296,6 +359,27 @@ function getSession(req) {
 function requireAuth(req, res) {
   if (!getSession(req)) {
     sendJson(res, 401, { error: 'Please sign in to continue.' });
+    return false;
+  }
+  return true;
+}
+
+function secretMatches(supplied, expected) {
+  if (!supplied || !expected) return false;
+  const suppliedBuffer = Buffer.from(String(supplied));
+  const expectedBuffer = Buffer.from(String(expected));
+  return suppliedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
+
+function requireTelegramApi(req, res) {
+  if (!TELEGRAM_API_SECRET) {
+    sendJson(res, 503, { error: 'Telegram API access is not configured.' });
+    return false;
+  }
+  const authorization = String(req.headers.authorization || '');
+  const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!secretMatches(supplied, TELEGRAM_API_SECRET)) {
+    sendJson(res, 401, { error: 'Invalid Telegram API credentials.' });
     return false;
   }
   return true;
@@ -374,6 +458,56 @@ function validateListing(input, existing, current) {
   };
 }
 
+async function listListingRecords() {
+  return (await readStoreForManagement()).listings;
+}
+
+async function createListingRecord(input) {
+  const store = await readStoreForManagement();
+  const listing = validateListing(input, store.listings);
+  store.listings.unshift(listing);
+  await writeStore(store);
+  return listing;
+}
+
+async function updateListingRecord(id, patch) {
+  const store = await readStoreForManagement();
+  const index = store.listings.findIndex(item => item.id === id);
+  if (index < 0) throw Object.assign(new Error('Listing not found.'), { status: 404 });
+  store.listings[index] = validateListing({ ...store.listings[index], ...patch }, store.listings, store.listings[index]);
+  await writeStore(store);
+  return store.listings[index];
+}
+
+async function deleteListingRecord(id) {
+  const store = await readStoreForManagement();
+  const before = store.listings.length;
+  store.listings = store.listings.filter(item => item.id !== id);
+  if (store.listings.length === before) throw Object.assign(new Error('Listing not found.'), { status: 404 });
+  await writeStore(store);
+}
+
+async function addProgressRecord(id, progressItem) {
+  const store = await readStoreForManagement();
+  const listing = store.listings.find(item => item.id === id);
+  if (!listing) throw Object.assign(new Error('Listing not found.'), { status: 404 });
+  if (listing.status !== 'construction') throw Object.assign(new Error('Progress can only be added to an under-construction listing.'), { status: 400 });
+  if ((listing.progress || []).length >= 10) throw Object.assign(new Error('This listing already has the maximum of 10 progress updates.'), { status: 400 });
+  return updateListingRecord(id, { progress: [...(listing.progress || []), progressItem] });
+}
+
+const telegramBot = createTelegramBot({
+  token: TELEGRAM_BOT_TOKEN,
+  ownerId: TELEGRAM_OWNER_CHAT_ID,
+  loadState: loadTelegramState,
+  saveState: saveTelegramState,
+  listListings: listListingRecords,
+  createListing: createListingRecord,
+  updateListing: updateListingRecord,
+  deleteListing: deleteListingRecord,
+  addProgress: addProgressRecord
+});
+
 function securityHeaders() {
   return {
     'X-Content-Type-Options': 'nosniff',
@@ -385,7 +519,48 @@ function securityHeaders() {
 }
 
 async function handleApi(req, res, url) {
+  if (url.pathname === '/api/telegram/webhook') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+    if (!TELEGRAM_CONFIGURED) return sendJson(res, 503, { error: 'Telegram bot is not configured.' });
+    if (!secretMatches(req.headers['x-telegram-bot-api-secret-token'], TELEGRAM_WEBHOOK_SECRET)) {
+      return sendJson(res, 401, { error: 'Invalid Telegram webhook secret.' });
+    }
+    const update = await readJson(req, 2 * 1024 * 1024);
+    await telegramBot.handleUpdate(update);
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (!sameOrigin(req) && !['GET', 'HEAD'].includes(req.method)) return sendJson(res, 403, { error: 'Request origin was rejected.' });
+
+  if (url.pathname === '/api/bot/listings' && req.method === 'GET') {
+    if (!requireTelegramApi(req, res)) return;
+    return sendJson(res, 200, { listings: await listListingRecords() });
+  }
+  if (url.pathname === '/api/bot/listings' && req.method === 'POST') {
+    if (!requireTelegramApi(req, res)) return;
+    return sendJson(res, 201, { listing: await createListingRecord(await readJson(req)) });
+  }
+  const botProgressMatch = url.pathname.match(/^\/api\/bot\/listings\/([^/]+)\/progress$/);
+  if (botProgressMatch && req.method === 'POST') {
+    if (!requireTelegramApi(req, res)) return;
+    return sendJson(res, 201, { listing: await addProgressRecord(decodeURIComponent(botProgressMatch[1]), await readJson(req)) });
+  }
+  const botListingMatch = url.pathname.match(/^\/api\/bot\/listings\/([^/]+)$/);
+  if (botListingMatch && req.method === 'GET') {
+    if (!requireTelegramApi(req, res)) return;
+    const listing = (await listListingRecords()).find(item => item.id === decodeURIComponent(botListingMatch[1]));
+    return listing ? sendJson(res, 200, { listing }) : sendJson(res, 404, { error: 'Listing not found.' });
+  }
+  if (botListingMatch && req.method === 'PUT') {
+    if (!requireTelegramApi(req, res)) return;
+    return sendJson(res, 200, { listing: await updateListingRecord(decodeURIComponent(botListingMatch[1]), await readJson(req)) });
+  }
+  if (botListingMatch && req.method === 'DELETE') {
+    if (!requireTelegramApi(req, res)) return;
+    await deleteListingRecord(decodeURIComponent(botListingMatch[1]));
+    return sendJson(res, 200, { deleted: true });
+  }
+
   const store = await readStore();
 
   if (req.method === 'GET' && url.pathname === '/api/listings') {
@@ -428,37 +603,30 @@ async function handleApi(req, res, url) {
   }
   if (req.method === 'GET' && url.pathname === '/api/admin/data') {
     if (!requireAuth(req, res)) return;
-    return sendJson(res, 200, store);
+    return sendJson(res, 200, await readStoreForManagement());
   }
   if (req.method === 'POST' && url.pathname === '/api/admin/listings') {
     if (!requireAuth(req, res)) return;
-    const listing = validateListing(await readJson(req), store.listings);
-    store.listings.unshift(listing);
-    await writeStore(store);
+    const listing = await createListingRecord(await readJson(req));
     return sendJson(res, 201, { listing: publicListing(listing, store.settings) });
   }
   const listingMatch = url.pathname.match(/^\/api\/admin\/listings\/([^/]+)$/);
   if (listingMatch && req.method === 'PUT') {
     if (!requireAuth(req, res)) return;
-    const index = store.listings.findIndex(item => item.id === decodeURIComponent(listingMatch[1]));
-    if (index < 0) return sendJson(res, 404, { error: 'Listing not found.' });
-    store.listings[index] = validateListing(await readJson(req), store.listings, store.listings[index]);
-    await writeStore(store);
-    return sendJson(res, 200, { listing: publicListing(store.listings[index], store.settings) });
+    const listing = await updateListingRecord(decodeURIComponent(listingMatch[1]), await readJson(req));
+    return sendJson(res, 200, { listing: publicListing(listing, store.settings) });
   }
   if (listingMatch && req.method === 'DELETE') {
     if (!requireAuth(req, res)) return;
-    const before = store.listings.length;
-    store.listings = store.listings.filter(item => item.id !== decodeURIComponent(listingMatch[1]));
-    if (store.listings.length === before) return sendJson(res, 404, { error: 'Listing not found.' });
-    await writeStore(store);
+    await deleteListingRecord(decodeURIComponent(listingMatch[1]));
     return sendJson(res, 200, { deleted: true });
   }
   if (req.method === 'PUT' && url.pathname === '/api/admin/settings') {
     if (!requireAuth(req, res)) return;
+    const managementStore = await readStoreForManagement();
     const body = await readJson(req, 10240);
-    store.settings = {
-      brandName: cleanText(body.brandName, 80) || store.settings.brandName,
+    managementStore.settings = {
+      brandName: cleanText(body.brandName, 80) || managementStore.settings.brandName,
       whatsapp: cleanText(body.whatsapp, 30).replace(/[^\d]/g, ''),
       phone: cleanText(body.phone, 40),
       email: cleanText(body.email, 120),
@@ -467,8 +635,8 @@ async function handleApi(req, res, url) {
       newDays: Math.min(90, Math.max(1, Number(body.newDays) || 14)),
       updatedDays: Math.min(30, Math.max(1, Number(body.updatedDays) || 7))
     };
-    await writeStore(store);
-    return sendJson(res, 200, { settings: store.settings });
+    await writeStore(managementStore);
+    return sendJson(res, 200, { settings: managementStore.settings });
   }
   return sendJson(res, 404, { error: 'API route not found.' });
 }

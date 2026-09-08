@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check public/app.js"
+    "check": "node --check server.js && node --check telegram-bot.js && node --check public/app.js && node --check scripts/configure-telegram-webhook.js && node --check scripts/get-telegram-chat-id.js",
+    "test": "node --test",
+    "telegram:chat-id": "node scripts/get-telegram-chat-id.js",
+    "telegram:webhook": "node scripts/configure-telegram-webhook.js"
   },
   "engines": {
     "node": ">=20"
