@@ -19,7 +19,7 @@ If `ADMIN_PASSWORD` is not set, the local demo password is `aaranya-demo`. Alway
 
 ## Private Telegram listing bot
 
-The Telegram bot is part of this same Node backend. It receives Telegram updates at `/api/telegram/webhook`, uses the same listing validation and write functions as the browser admin panel, and saves listings to the same Supabase `site_store` row. Vercel hosts it as an HTTPS webhook, so there is no long-running polling process to keep alive.
+The Telegram bot is part of this same Node backend. It receives Telegram updates at `/api/telegram/webhook`, uses the same listing validation and write functions as the browser admin panel, and saves listings to the same Supabase `site_store` row. Vercel hosts it as an HTTPS webhook, so there is no long-running polling process to keep alive. Multiple authorized owners can use the bot, with an independent saved conversation for each owner.
 
 Available owner commands:
 
@@ -39,7 +39,7 @@ $env:TELEGRAM_BOT_TOKEN='paste-the-BotFather-token'
 npm run telegram:chat-id
 ```
 
-Copy your numeric account ID from the output. It becomes `TELEGRAM_OWNER_CHAT_ID`. The webhook rejects other accounts and group chats without replying.
+Copy each authorized person's numeric account ID from the output. The webhook rejects other accounts and group chats without replying.
 
 ### 2. Configure production environment variables
 
@@ -47,7 +47,7 @@ Add these encrypted Production Environment Variables in Vercel, alongside the ex
 
 ```text
 TELEGRAM_BOT_TOKEN=<BotFather token>
-TELEGRAM_OWNER_CHAT_ID=<your numeric private Telegram account ID>
+TELEGRAM_OWNER_CHAT_IDS=<comma-separated numeric Telegram account IDs>
 TELEGRAM_WEBHOOK_SECRET=<random webhook verification secret>
 TELEGRAM_API_SECRET=<separate random bearer token for /api/bot/*>
 ```
@@ -75,7 +75,7 @@ $env:TELEGRAM_WEBHOOK_URL='https://mdu-properties-webpage.vercel.app'
 npm run telegram:webhook
 ```
 
-The setup script registers the command menu, restricts Telegram to message and callback-query updates, supplies Telegram’s secret webhook header, and uses one connection so a single owner’s guided steps remain ordered.
+The setup script registers the command menu, restricts Telegram to message and callback-query updates, supplies Telegram’s secret webhook header, and uses one connection so guided steps remain ordered. Every listed owner has full create, edit, progress, and delete access. For backward compatibility, `TELEGRAM_OWNER_CHAT_ID` is still accepted and may also contain comma-separated IDs; values from the singular and plural variables are merged.
 
 ### Authenticated bot REST API
 
@@ -102,7 +102,7 @@ These endpoints and the browser admin routes call the same listing service, so v
 - Single-owner authentication with HttpOnly, SameSite session cookies and login rate limiting
 - Main, gallery, and progress image uploads compressed to WebP before storage
 - Rich description editor, sitewide contact settings, WhatsApp-prefilled messages, click-to-call, and email links
-- Private owner-only Telegram listing management using the same Supabase data
+- Private authorized-owner Telegram listing management using the same Supabase data
 - Semantic structure, per-page metadata, alt text, lazy-loaded gallery images, reduced-motion support, and visible keyboard focus
 
 Runtime data is written to `data/store.json` and intentionally ignored by git. Delete that file to restore the seeded demonstration listings on the next start.

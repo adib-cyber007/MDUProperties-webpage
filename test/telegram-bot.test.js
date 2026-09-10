@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createTelegramBot, parsePrice, plainTextToHtml } = require('../telegram-bot');
+const { createTelegramBot, parseTelegramOwnerIds, parsePrice, plainTextToHtml } = require('../telegram-bot');
 
 const OWNER_ID = '123456789';
 
@@ -27,6 +27,18 @@ function callbackUpdate(updateId, data) {
       from: { id: Number(OWNER_ID), first_name: 'Owner' },
       message: { message_id: updateId, chat: { id: Number(OWNER_ID), type: 'private' } },
       data
+    }
+  };
+}
+
+function messageUpdateFor(ownerId, updateId, text) {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      from: { id: Number(ownerId), first_name: 'Owner' },
+      chat: { id: Number(ownerId), type: 'private' },
+      text
     }
   };
 }
@@ -85,6 +97,39 @@ test('price parsing accepts rupees, lakhs, and crores', () => {
 
 test('plain Telegram descriptions become safe website paragraphs', () => {
   assert.equal(plainTextToHtml('First <home>\n\nSecond & final'), '<p>First &lt;home&gt;</p><p>Second &amp; final</p>');
+});
+
+test('owner IDs accept legacy, comma-separated, and plural configurations', () => {
+  assert.deepEqual(parseTelegramOwnerIds('123456789', '987654321, 123456789; 555555555'), [
+    '123456789', '987654321', '555555555'
+  ]);
+  assert.deepEqual(parseTelegramOwnerIds('123,not-an-id,-456'), ['123']);
+});
+
+test('multiple owners are authorized with independent conversation state', async () => {
+  const ownerIds = [OWNER_ID, '987654321'];
+  const states = new Map();
+  const telegramCalls = [];
+  const bot = createTelegramBot({
+    token: 'test-token',
+    ownerIds,
+    telegramRequest: async (method, payload) => {
+      telegramCalls.push({ method, payload });
+      return true;
+    },
+    loadState: async ownerId => structuredClone(states.get(ownerId) || { conversation: null, lastUpdateId: 0 }),
+    saveState: async (ownerId, state) => states.set(ownerId, structuredClone(state)),
+    listListings: async () => []
+  });
+
+  await bot.handleUpdate(messageUpdateFor(ownerIds[0], 1, '/newlisting'));
+  await bot.handleUpdate(messageUpdateFor(ownerIds[1], 2, '/mylistings'));
+
+  assert.equal(states.get(ownerIds[0]).conversation.flow, 'new');
+  assert.equal(states.get(ownerIds[1]).conversation, null);
+  assert.deepEqual(telegramCalls.filter(call => call.method === 'sendMessage').map(call => call.payload.chat_id), [
+    Number(ownerIds[0]), Number(ownerIds[1])
+  ]);
 });
 
 test('the private bot ignores every non-owner update', async () => {

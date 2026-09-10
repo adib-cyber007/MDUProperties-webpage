@@ -242,9 +242,17 @@ function chooseTelegramPhoto(message, maxWidth) {
   return null;
 }
 
+function parseTelegramOwnerIds(...values) {
+  return [...new Set(values
+    .flat(Infinity)
+    .flatMap(value => String(value || '').split(/[\s,;]+/))
+    .map(value => value.trim())
+    .filter(value => /^\d+$/.test(value)))];
+}
+
 function createTelegramBot(options) {
   const token = String(options.token || '');
-  const ownerId = String(options.ownerId || '');
+  const ownerIds = new Set(parseTelegramOwnerIds(options.ownerIds, options.ownerId));
   const telegramRequest = options.telegramRequest || (async (method, payload = {}) => {
     if (!token) throw new Error('Telegram bot token is not configured.');
     const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
@@ -683,7 +691,8 @@ function createTelegramBot(options) {
     const message = update?.message;
     const from = callback?.from || message?.from;
     const chat = callback?.message?.chat || message?.chat;
-    if (!from || !chat || chat.type !== 'private' || String(from.id) !== ownerId || String(chat.id) !== ownerId) return { ignored: true };
+    const ownerId = String(from?.id || '');
+    if (!from || !chat || chat.type !== 'private' || String(chat.id) !== ownerId || !ownerIds.has(ownerId)) return { ignored: true };
 
     if (callback?.id) await telegramRequest('answerCallbackQuery', { callback_query_id: callback.id }).catch(error => console.warn(error.message));
     const record = await options.loadState(ownerId);
@@ -724,6 +733,7 @@ module.exports = {
   MAX_DRAFT_BYTES,
   MAX_IMAGE_BYTES,
   createTelegramBot,
+  parseTelegramOwnerIds,
   parsePrice,
   plainTextToHtml,
   stripHtml

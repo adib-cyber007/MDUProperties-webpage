@@ -4,7 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { createTelegramBot } = require('./telegram-bot');
+const { createTelegramBot, parseTelegramOwnerIds } = require('./telegram-bot');
 
 const PORT = Number(process.env.PORT || 43821);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -14,9 +14,10 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_OWNER_CHAT_ID = process.env.TELEGRAM_OWNER_CHAT_ID || '';
+const TELEGRAM_OWNER_CHAT_IDS = parseTelegramOwnerIds(process.env.TELEGRAM_OWNER_CHAT_IDS, TELEGRAM_OWNER_CHAT_ID);
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
 const TELEGRAM_API_SECRET = process.env.TELEGRAM_API_SECRET || '';
-const TELEGRAM_CONFIGURED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_OWNER_CHAT_ID && TELEGRAM_WEBHOOK_SECRET);
+const TELEGRAM_CONFIGURED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_OWNER_CHAT_IDS.length && TELEGRAM_WEBHOOK_SECRET);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
@@ -498,7 +499,7 @@ async function addProgressRecord(id, progressItem) {
 
 const telegramBot = createTelegramBot({
   token: TELEGRAM_BOT_TOKEN,
-  ownerId: TELEGRAM_OWNER_CHAT_ID,
+  ownerIds: TELEGRAM_OWNER_CHAT_IDS,
   loadState: loadTelegramState,
   saveState: saveTelegramState,
   listListings: listListingRecords,
