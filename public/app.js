@@ -14,6 +14,7 @@ const header = document.querySelector('#site-header');
 const footer = document.querySelector('#site-footer');
 const floating = document.querySelector('#floating-contact');
 const modalRoot = document.querySelector('#modal-root');
+let heroRotationTimer = null;
 
 
 main.style.paddingBottom="5px";
@@ -96,7 +97,7 @@ function navigate(path) {
 
 function brandMarkup() {
   return `<a class="brand" href="/" data-link aria-label="${escapeHtml(state.settings?.brandName || 'Madurai Dream Properties')} home">
-    <img src="/mark.svg" alt="" width="34" height="34">
+    <img src="/mark.svg?v=3" alt="" width="38" height="38">
     <span><strong>${escapeHtml(state.settings?.brandName || 'Madurai Dream Properties')}</strong><span>Owner-managed properties</span></span>
   </a>`;
 }
@@ -163,18 +164,27 @@ function listingCard(listing) {
   </article>`;
 }
 
-function projectCard(project, prominent = false) {
-  return `<article class="portfolio-card ${prominent ? 'portfolio-card-prominent' : ''}">
-    <a class="portfolio-image" href="/project/${encodeURIComponent(project.id)}" data-link aria-label="View completed project ${escapeHtml(project.title)}">
+function projectCard(project) {
+  return `<article class="listing-card portfolio-card reveal">
+    <a class="card-image" href="/project/${encodeURIComponent(project.id)}" data-link aria-label="View completed project ${escapeHtml(project.title)}">
       <img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)}, completed project in ${escapeHtml(project.location)}" width="1200" height="850" loading="lazy">
-      <span class="sold-stamp">Sold · Portfolio project</span>
-      ${project.highProfile ? '<span class="project-distinction">Signature work</span>' : ''}
+      <div class="card-badges"><span class="badge badge-sold">Sold · Not for sale</span>${project.highProfile ? '<span class="badge badge-signature">Signature project</span>' : ''}</div>
     </a>
-    <div class="portfolio-card-body">
-      <p>${escapeHtml(project.projectType || 'Residential project')} · Completed ${escapeHtml(project.completedYear)}</p>
-      <h3><a href="/project/${encodeURIComponent(project.id)}" data-link>${escapeHtml(project.title)}</a></h3>
-      <div><span>${escapeHtml(project.location)}</span>${project.area ? `<span>${escapeHtml(project.area)}</span>` : ''}</div>
+    <div class="card-body">
+      <p class="card-location">${escapeHtml(project.location)}</p>
+      <div class="card-title-row"><h3 class="card-title"><a href="/project/${encodeURIComponent(project.id)}" data-link>${escapeHtml(project.title)}</a></h3></div>
+      <div class="card-meta"><span>Completed ${escapeHtml(project.completedYear)}</span><span>${escapeHtml(project.projectType || 'Residential project')}</span><a href="/project/${encodeURIComponent(project.id)}" data-link aria-label="View details for ${escapeHtml(project.title)}">View project ${icon('arrow')}</a></div>
     </div>
+  </article>`;
+}
+
+function builderProjectCard(project) {
+  return `<article class="builder-project">
+    <a class="builder-project-image" href="/project/${encodeURIComponent(project.id)}" data-link aria-label="View completed project ${escapeHtml(project.title)}">
+      <img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)}, completed project in ${escapeHtml(project.location)}" width="640" height="480" loading="lazy">
+      <span class="badge badge-sold">Sold · Not for sale</span>
+    </a>
+    <div class="builder-project-body"><span>Completed ${escapeHtml(project.completedYear)}</span><h3><a href="/project/${encodeURIComponent(project.id)}" data-link>${escapeHtml(project.title)}</a></h3></div>
   </article>`;
 }
 
@@ -183,9 +193,9 @@ function renderPortfolio() {
   document.title = `Previous projects — ${state.settings.brandName}`;
   setMeta('Explore completed and sold projects delivered by our team. These portfolio projects are not currently for sale.');
   const projects = [...state.projects].sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear));
-  main.innerHTML = `<section class="portfolio-hero"><div class="container portfolio-hero-grid"><div><span class="eyebrow">Built, delivered, lived in</span><h1>A record of completed work.</h1></div><div><p>These homes have been completed and sold. They are presented as a portfolio of our planning, construction, and finish—not as properties currently available for purchase.</p><div class="portfolio-availability-note"><strong>Portfolio only</strong><span>Every project on this page is sold and not for sale.</span></div></div></div></section>
-  <section class="portfolio-index"><div class="container">${projects.length ? `<div class="portfolio-grid">${projects.map((project, index) => projectCard(project, index === 0 && project.highProfile)).join('')}</div>` : '<div class="empty-state portfolio-empty"><h2>Our completed-project archive is being prepared.</h2><p>Past work will appear here as photography and project details are added.</p></div>'}</div></section>
-  <section class="portfolio-footer-note"><div class="container"><p>Looking for a home that is currently available?</p><a class="btn btn-light" href="/listings" data-link>View available homes ${icon('arrow')}</a></div></section>`;
+  main.innerHTML = `<section class="page-hero"><div class="container"><span class="eyebrow">Previous projects</span><h1>Homes we have completed.</h1><p>Explore the homes we have built and delivered in Madurai. Every project shown here has been sold and is not for sale.</p></div></section>
+  <section class="portfolio-index"><div class="container"><div class="portfolio-availability-note"><span class="badge badge-sold">Sold projects</span><p>This is a record of our previous work. For homes you can buy now, visit <a href="/listings" data-link>available homes</a>.</p></div>${projects.length ? `<div class="listing-grid">${projects.map(projectCard).join('')}</div>` : '<div class="empty-state"><h2>Previous projects are coming soon.</h2><p>Photographs and details of completed homes will appear here as they are added.</p></div>'}</div></section>
+  <section class="portfolio-footer-note"><div class="container"><div><h2>Looking for an available home?</h2><p>See the properties currently open for enquiry.</p></div><a class="btn" href="/listings" data-link>View available homes ${icon('arrow')}</a></div></section>`;
 }
 
 function renderProject(id) {
@@ -196,10 +206,10 @@ function renderProject(id) {
   setMeta(`${project.title}, a completed and sold portfolio project in ${project.location}. Not currently for sale.`);
   const gallery = project.gallery || [];
   const galleryMarkup = gallery.length ? `<section class="gallery-section project-gallery"><div class="container"><div class="gallery-header"><div><span class="eyebrow">Project photography</span><h2>Completed spaces</h2></div><p class="muted">Select an image to view it full screen.</p></div><div class="gallery-grid count-${Math.min(gallery.length, 3)} zoomable">${gallery.map((src, index) => `<button class="gallery-item" type="button" data-project-lightbox="${index}" aria-label="Open project photograph ${index + 1}"><img src="${escapeHtml(src)}" alt="${escapeHtml(project.title)} photograph ${index + 1}" loading="lazy"><span class="zoom-cue">${icon('zoom')}</span></button>`).join('')}</div></div></section>` : '';
-  const modelMarkup = project.modelUrl ? `<section class="model-section"><div class="container model-grid"><div><span class="eyebrow">Interactive project view</span><h2>Explore the 3D model.</h2><p>Rotate, zoom, and move through a digital record of the completed project.</p></div><div class="model-frame"><iframe title="3D model of ${escapeHtml(project.title)}" src="${escapeHtml(project.modelUrl)}" loading="lazy" allow="autoplay; fullscreen; xr-spatial-tracking" allowfullscreen></iframe></div></div></section>` : '';
+  const modelMarkup = project.modelUrl ? `<section class="model-section"><div class="container model-grid"><div><span class="eyebrow">Interactive project view</span><h2>Explore the 3D model.</h2><p>Rotate and zoom to see this completed project from every angle.</p></div><div class="model-frame"><iframe title="3D model of ${escapeHtml(project.title)}" src="${escapeHtml(project.modelUrl)}" loading="lazy" allow="autoplay; fullscreen; xr-spatial-tracking" allowfullscreen></iframe></div></div></section>` : '';
   main.innerHTML = `<article class="project-detail">
-    <header class="project-detail-hero"><img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)} in ${escapeHtml(project.location)}" width="1800" height="1150"><div class="project-detail-overlay"><span class="sold-stamp">Sold · Not for sale</span>${project.highProfile ? '<span class="project-distinction">Signature work</span>' : ''}<h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.location)}</p></div></header>
-    <section class="container project-intro"><div class="project-facts"><div><span>Completed</span><strong>${escapeHtml(project.completedYear)}</strong></div><div><span>Project type</span><strong>${escapeHtml(project.projectType || 'Residential')}</strong></div>${project.area ? `<div><span>Built area</span><strong>${escapeHtml(project.area)}</strong></div>` : ''}<div><span>Availability</span><strong>Sold</strong></div></div><div class="project-story"><span class="eyebrow">The completed work</span><div class="prose">${project.description || '<p>Project details are being documented.</p>'}</div><div class="not-for-sale-panel"><strong>This is a previous project.</strong><p>It has been sold and is shown only as an example of our completed work.</p><a href="/listings" data-link>See homes currently available ${icon('arrow')}</a></div></div></section>
+    <header class="detail-hero"><img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)} in ${escapeHtml(project.location)}" width="1800" height="1150"><div class="detail-hero-content"><div class="card-badges"><span class="badge badge-sold">Sold · Not for sale</span>${project.highProfile ? '<span class="badge badge-signature">Signature project</span>' : ''}</div><h1>${escapeHtml(project.title)}</h1><p class="detail-hero-place">${escapeHtml(project.location)}</p></div></header>
+    <section class="container detail-summary"><div><div class="detail-facts"><div class="detail-fact"><span>Completed</span><strong>${escapeHtml(project.completedYear)}</strong></div><div class="detail-fact"><span>Project type</span><strong>${escapeHtml(project.projectType || 'Residential')}</strong></div><div class="detail-fact"><span>Availability</span><strong>Sold</strong></div></div>${project.area ? `<p class="project-area">Built area: ${escapeHtml(project.area)}</p>` : ''}<span class="eyebrow">About this project</span><div class="prose">${project.description || '<p>Project details are being documented.</p>'}</div></div><aside class="detail-aside"><span class="detail-aside-label">Previous project</span><h2>Completed and sold.</h2><p>This home is part of our portfolio and is not available for purchase.</p><a class="btn btn-outline" href="/portfolio" data-link>All previous projects</a><a class="btn" href="/listings" data-link>View available homes ${icon('arrow')}</a></aside></section>
     ${galleryMarkup}${modelMarkup}
   </article>`;
   document.querySelectorAll('[data-project-lightbox]').forEach(button => button.addEventListener('click', () => openLightbox(gallery, Number(button.dataset.projectLightbox), project.title)));
@@ -209,12 +219,14 @@ function renderHome() {
   state.currentListing = null;
   const selectedFeatured = state.listings.filter(item => item.featured);
   const featured = (selectedFeatured.length ? selectedFeatured : state.listings).slice(0, 3);
-  const heroListing = featured[0] || state.listings[0];
-  const portfolioPreview = state.projects.filter(item => item.featured).sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear)).slice(0, 3);
-  const heroVisual = heroListing ? `<a class="hero-visual" href="/listing/${encodeURIComponent(heroListing.id)}" data-link aria-label="View ${escapeHtml(heroListing.title)}">
-      <img src="${escapeHtml(heroListing.mainImage)}" alt="${escapeHtml(heroListing.title)}, a newly built home in ${escapeHtml(heroListing.location)}" width="1400" height="1200">
-      <div class="hero-caption"><span>${heroListing.status === 'ready' ? 'Ready to visit' : 'Now in progress'}</span><strong>${escapeHtml(heroListing.title)} · ${escapeHtml(heroListing.location)}</strong></div>
-    </a>` : `<div class="hero-visual hero-visual-empty">
+  const heroListings = [...featured, ...state.listings.filter(item => !featured.some(featuredItem => featuredItem.id === item.id))].slice(0, 3);
+  const portfolioPreview = state.projects.filter(item => item.featured).sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear)).slice(0, 2);
+  const heroVisual = heroListings.length ? `<div class="hero-visual hero-rotator" data-hero-rotator role="group" aria-label="Featured available homes">
+      ${heroListings.map((listing, index) => `<a class="hero-slide ${index === 0 ? 'is-active' : ''}" href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View ${escapeHtml(listing.title)}" aria-hidden="${index !== 0}" tabindex="${index === 0 ? '0' : '-1'}">
+        <img src="${escapeHtml(listing.mainImage)}" alt="${escapeHtml(listing.title)}, a newly built home in ${escapeHtml(listing.location)}" width="1400" height="1200" ${index === 0 ? 'fetchpriority="high"' : ''}>
+        <div class="hero-caption"><span>${listing.status === 'ready' ? 'Ready to visit' : 'Now in progress'}</span><strong>${escapeHtml(listing.title)} · ${escapeHtml(listing.location)}</strong></div>
+      </a>`).join('')}
+    </div>` : `<div class="hero-visual hero-visual-empty">
       <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=82" alt="A thoughtfully designed contemporary home" width="1400" height="1200">
       <div class="hero-caption"><span>Portfolio update</span><strong>New owner-listed homes are coming soon.</strong></div>
     </div>`;
@@ -238,7 +250,7 @@ function renderHome() {
     <div class="section-top"><div><span class="eyebrow">Available now</span><h2 class="section-heading small">A small, considered collection.</h2></div><a class="btn btn-outline" href="/listings" data-link>See all homes ${icon('arrow')}</a></div>
     <div class="listing-grid">${featured.length ? featured.map(listingCard).join('') : '<div class="empty-state"><h2>New homes are being prepared.</h2><p>Contact the owner directly to hear about upcoming availability.</p></div>'}</div>
   </div></section>
-  ${portfolioPreview.length ? `<section class="home-portfolio"><div class="container"><div class="section-top"><div><span class="eyebrow">Completed work</span><h2 class="section-heading small">Built, sold, and part of our story.</h2><p>Previous projects are shown as a record of our work. They are not currently for sale.</p></div><a class="btn btn-outline" href="/portfolio" data-link>Explore the portfolio ${icon('arrow')}</a></div><div class="portfolio-grid home-portfolio-grid">${portfolioPreview.map((project, index) => projectCard(project, index === 0 && project.highProfile)).join('')}</div></div></section>` : ''}
+  <section class="home-portfolio" aria-labelledby="builder-portfolio-title"><div class="container builder-showcase"><div class="builder-showcase-copy"><span class="builder-verified"><span aria-hidden="true">✓</span> Verified builder</span><h2 id="builder-portfolio-title">See the work behind the homes.</h2><p>Our team manages every listing directly. Explore previous homes we have completed and sold to get a sense of our planning, construction, and finish.</p><a class="btn btn-outline" href="/portfolio" data-link>View previous projects ${icon('arrow')}</a></div><div class="builder-projects">${portfolioPreview.length ? portfolioPreview.map(builderProjectCard).join('') : '<div class="builder-projects-empty"><img src="/mark.svg?v=3" alt="" width="56" height="56"><strong>Our completed work</strong><p>Project photographs and stories will appear here as they are added.</p></div>'}</div></div></section>
   <section id="approach" class="philosophy"><div class="container philosophy-grid">
     <div><span class="eyebrow">How we build</span><h2>Quiet choices. Enduring homes.</h2></div>
     <div class="principles">
@@ -248,6 +260,37 @@ function renderHome() {
     </div>
   </div></section>
   <section class="contact-band"><div class="container contact-band-inner"><div><span class="eyebrow">Begin a conversation</span><h2>Looking for your next home?</h2><p>Tell us the neighbourhood, size, and timeline you have in mind. You’ll speak with someone who knows each home first-hand.</p></div><div class="contact-actions">${contactButtons()}</div></div></section>`;
+  setupHeroRotation();
+}
+
+function setupHeroRotation() {
+  const rotator = main.querySelector('[data-hero-rotator]');
+  const slides = [...(rotator?.querySelectorAll('.hero-slide') || [])];
+  if (slides.length < 2) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let current = 0;
+  let focused = false;
+
+  const show = next => {
+    current = (next + slides.length) % slides.length;
+    slides.forEach((slide, index) => {
+      const active = index === current;
+      slide.classList.toggle('is-active', active);
+      slide.setAttribute('aria-hidden', String(!active));
+      slide.tabIndex = active ? 0 : -1;
+    });
+  };
+  const start = () => {
+    clearInterval(heroRotationTimer);
+    if (!focused && !reducedMotion.matches) heroRotationTimer = setInterval(() => {
+      if (!document.hidden) show(current + 1);
+    }, 6000);
+  };
+  slides.forEach(slide => {
+    slide.addEventListener('focus', () => { focused = true; start(); });
+    slide.addEventListener('blur', () => { focused = false; start(); });
+  });
+  start();
 }
 
 function renderListings() {
@@ -635,6 +678,8 @@ function setMeta(description) {
 }
 
 async function renderRoute() {
+  clearInterval(heroRotationTimer);
+  heroRotationTimer = null;
   try {
     if (!state.settings) {
       const [settingsData, listingsData, projectsData] = await Promise.all([api('/api/settings'), api('/api/listings'), api('/api/projects')]);
