@@ -63,6 +63,7 @@ function defaultData() {
       newDays: 14,
       updatedDays: 7
     },
+    projects: [],
     listings: [
       {
         id: 'courtyard-house',
@@ -172,6 +173,7 @@ function validateStore(data) {
   if (!data || typeof data !== 'object' || !data.settings || !Array.isArray(data.listings)) {
     throw new Error('Supabase returned an invalid site store.');
   }
+  if (!Array.isArray(data.projects)) data.projects = [];
   return data;
 }
 
@@ -459,6 +461,73 @@ function validateListing(input, existing, current) {
   };
 }
 
+function cleanModelUrl(value) {
+  const url = cleanUrl(value);
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'sketchfab.com' || parsed.hostname.endsWith('.sketchfab.com') ? parsed.toString() : '';
+  } catch { return ''; }
+}
+
+function validatePortfolioProject(input, existing, current) {
+  const title = cleanText(input.title, 90);
+  const mainImage = cleanUrl(input.mainImage);
+  const modelUrl = cleanModelUrl(input.modelUrl);
+  if (!title || !mainImage) {
+    throw Object.assign(new Error('Project title and a main image are required.'), { status: 400 });
+  }
+  if (String(input.modelUrl || '').trim() && !modelUrl) {
+    throw Object.assign(new Error('Use a valid Sketchfab HTTPS embed URL for the 3D model.'), { status: 400 });
+  }
+  const now = new Date().toISOString();
+  const completedYear = Math.min(new Date().getFullYear(), Math.max(1900, Number(input.completedYear) || new Date().getFullYear()));
+  return {
+    id: current?.id || slugify(title, existing),
+    title,
+    location: cleanText(input.location, 140),
+    completedYear,
+    projectType: cleanText(input.projectType, 80),
+    area: cleanText(input.area, 60),
+    description: cleanDescription(input.description),
+    mainImage,
+    gallery: Array.isArray(input.gallery) ? input.gallery.map(cleanUrl).filter(Boolean).slice(0, 20) : [],
+    featured: Boolean(input.featured),
+    highProfile: Boolean(input.highProfile),
+    modelUrl,
+    createdAt: current?.createdAt || now,
+    updatedAt: now
+  };
+}
+
+async function createPortfolioProject(input) {
+  const store = await readStoreForManagement();
+  store.projects ||= [];
+  const project = validatePortfolioProject(input, store.projects);
+  store.projects.unshift(project);
+  await writeStore(store);
+  return project;
+}
+
+async function updatePortfolioProject(id, patch) {
+  const store = await readStoreForManagement();
+  store.projects ||= [];
+  const index = store.projects.findIndex(item => item.id === id);
+  if (index < 0) throw Object.assign(new Error('Portfolio project not found.'), { status: 404 });
+  store.projects[index] = validatePortfolioProject({ ...store.projects[index], ...patch }, store.projects, store.projects[index]);
+  await writeStore(store);
+  return store.projects[index];
+}
+
+async function deletePortfolioProject(id) {
+  const store = await readStoreForManagement();
+  store.projects ||= [];
+  const before = store.projects.length;
+  store.projects = store.projects.filter(item => item.id !== id);
+  if (store.projects.length === before) throw Object.assign(new Error('Portfolio project not found.'), { status: 404 });
+  await writeStore(store);
+}
+
 async function listListingRecords() {
   return (await readStoreForManagement()).listings;
 }
@@ -515,7 +584,7 @@ function securityHeaders() {
     'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://images.unsplash.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; frame-src https://www.google.com; connect-src 'self'"
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://images.unsplash.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; frame-src https://www.google.com https://sketchfab.com; connect-src 'self'"
   };
 }
 
@@ -575,6 +644,14 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/settings') {
     return sendJson(res, 200, { settings: store.settings });
   }
+  if (req.method === 'GET' && url.pathname === '/api/projects') {
+    return sendJson(res, 200, { projects: store.projects || [] });
+  }
+  if (req.method === 'GET' && url.pathname.startsWith('/api/projects/')) {
+    const id = decodeURIComponent(url.pathname.split('/').pop());
+    const project = (store.projects || []).find(item => item.id === id);
+    return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Portfolio project not found.' });
+  }
   if (req.method === 'GET' && url.pathname === '/api/session') {
     return sendJson(res, 200, { authenticated: Boolean(getSession(req)) });
   }
@@ -620,6 +697,20 @@ async function handleApi(req, res, url) {
   if (listingMatch && req.method === 'DELETE') {
     if (!requireAuth(req, res)) return;
     await deleteListingRecord(decodeURIComponent(listingMatch[1]));
+    return sendJson(res, 200, { deleted: true });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/admin/projects') {
+    if (!requireAuth(req, res)) return;
+    return sendJson(res, 201, { project: await createPortfolioProject(await readJson(req)) });
+  }
+  const projectMatch = url.pathname.match(/^\/api\/admin\/projects\/([^/]+)$/);
+  if (projectMatch && req.method === 'PUT') {
+    if (!requireAuth(req, res)) return;
+    return sendJson(res, 200, { project: await updatePortfolioProject(decodeURIComponent(projectMatch[1]), await readJson(req)) });
+  }
+  if (projectMatch && req.method === 'DELETE') {
+    if (!requireAuth(req, res)) return;
+    await deletePortfolioProject(decodeURIComponent(projectMatch[1]));
     return sendJson(res, 200, { deleted: true });
   }
   if (req.method === 'PUT' && url.pathname === '/api/admin/settings') {

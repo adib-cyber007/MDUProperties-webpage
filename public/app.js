@@ -3,6 +3,7 @@
 const state = {
   settings: null,
   listings: [],
+  projects: [],
   currentListing: null,
   filters: { status: 'all', location: 'all', price: 'all', sort: 'newest' },
   admin: { tab: 'listings', data: null, editing: null, gallery: [], mainImage: '', progress: [] }
@@ -102,6 +103,8 @@ function brandMarkup() {
 
 function renderChrome() {
   const adminRoute = location.pathname.startsWith('/admin');
+  const portfolioRoute = location.pathname === '/portfolio' || location.pathname.startsWith('/project/');
+  const hideFloatingContact = adminRoute || portfolioRoute;
   header.className = 'site-header';
   header.innerHTML = `<div class="header-inner">
     ${brandMarkup()}
@@ -109,6 +112,7 @@ function renderChrome() {
     <nav class="site-nav" aria-label="Main navigation">
       <a href="/" data-link class="${location.pathname === '/' ? 'active' : ''}">Home</a>
       <a href="/listings" data-link class="${location.pathname.startsWith('/listing') ? 'active' : ''}">Available homes</a>
+      <a href="/portfolio" data-link class="${location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/project/') ? 'active' : ''}">Previous projects</a>
       ${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}
       ${state.settings.phone ? `<a class="header-call" href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>` : ''}
       ${adminRoute ? '<a href="/admin" data-link class="active">Owner</a>' : ''}
@@ -118,12 +122,12 @@ function renderChrome() {
   footer.innerHTML = `<div class="container">
     <div class="footer-grid">
       <div>${brandMarkup()}<p>Newly built homes, planned and delivered with care. Every listing is managed directly by our team.</p></div>
-      <div class="footer-column"><h3>Explore</h3><a href="/listings" data-link>Available homes</a><a href="/#approach" data-scroll>Our approach</a><a href="/admin" data-link>Owner sign in</a></div>
+      <div class="footer-column"><h3>Explore</h3><a href="/listings" data-link>Available homes</a><a href="/portfolio" data-link>Previous projects</a><a href="/#approach" data-scroll>Our approach</a><a href="/admin" data-link>Owner sign in</a></div>
       <div class="footer-column"><h3>Contact</h3>${state.settings.phone ? `<a href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>` : ''}${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}${state.settings.whatsapp ? `<a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer">WhatsApp us</a>` : ''}${state.settings.instagram ? `<a href="${escapeHtml(state.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}${state.settings.officeAddress ? `<address>${escapeHtml(state.settings.officeAddress)}</address>` : ''}</div>
     </div>
     <div class="footer-bottom"><span>© ${new Date().getFullYear()} ${escapeHtml(state.settings.brandName)}.</span><span>Owner-managed · Direct enquiries</span></div>
   </div>`;
-  floating.innerHTML = state.settings.whatsapp ? `<div class="mobile-contact-dock" aria-label="Quick contact"><a href="${phoneHref(state.settings.phone)}" aria-label="Call ${escapeHtml(state.settings.phone)}">${icon('phone')}<span>Call</span></a><a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp</span></a></div><a class="floating-whatsapp" href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp us</span></a>` : '';
+  floating.innerHTML = !hideFloatingContact && state.settings.whatsapp ? `<div class="mobile-contact-dock" aria-label="Quick contact"><a href="${phoneHref(state.settings.phone)}" aria-label="Call ${escapeHtml(state.settings.phone)}">${icon('phone')}<span>Call</span></a><a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp</span></a></div><a class="floating-whatsapp" href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer" aria-label="Chat about ${escapeHtml(state.currentListing?.title || 'available homes')} on WhatsApp">${icon('whatsapp')}<span>WhatsApp us</span></a>` : '';
 
   const toggle = header.querySelector('.menu-toggle');
   toggle.addEventListener('click', () => {
@@ -159,11 +163,54 @@ function listingCard(listing) {
   </article>`;
 }
 
+function projectCard(project, prominent = false) {
+  return `<article class="portfolio-card ${prominent ? 'portfolio-card-prominent' : ''}">
+    <a class="portfolio-image" href="/project/${encodeURIComponent(project.id)}" data-link aria-label="View completed project ${escapeHtml(project.title)}">
+      <img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)}, completed project in ${escapeHtml(project.location)}" width="1200" height="850" loading="lazy">
+      <span class="sold-stamp">Sold · Portfolio project</span>
+      ${project.highProfile ? '<span class="project-distinction">Signature work</span>' : ''}
+    </a>
+    <div class="portfolio-card-body">
+      <p>${escapeHtml(project.projectType || 'Residential project')} · Completed ${escapeHtml(project.completedYear)}</p>
+      <h3><a href="/project/${encodeURIComponent(project.id)}" data-link>${escapeHtml(project.title)}</a></h3>
+      <div><span>${escapeHtml(project.location)}</span>${project.area ? `<span>${escapeHtml(project.area)}</span>` : ''}</div>
+    </div>
+  </article>`;
+}
+
+function renderPortfolio() {
+  state.currentListing = null;
+  document.title = `Previous projects — ${state.settings.brandName}`;
+  setMeta('Explore completed and sold projects delivered by our team. These portfolio projects are not currently for sale.');
+  const projects = [...state.projects].sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear));
+  main.innerHTML = `<section class="portfolio-hero"><div class="container portfolio-hero-grid"><div><span class="eyebrow">Built, delivered, lived in</span><h1>A record of completed work.</h1></div><div><p>These homes have been completed and sold. They are presented as a portfolio of our planning, construction, and finish—not as properties currently available for purchase.</p><div class="portfolio-availability-note"><strong>Portfolio only</strong><span>Every project on this page is sold and not for sale.</span></div></div></div></section>
+  <section class="portfolio-index"><div class="container">${projects.length ? `<div class="portfolio-grid">${projects.map((project, index) => projectCard(project, index === 0 && project.highProfile)).join('')}</div>` : '<div class="empty-state portfolio-empty"><h2>Our completed-project archive is being prepared.</h2><p>Past work will appear here as photography and project details are added.</p></div>'}</div></section>
+  <section class="portfolio-footer-note"><div class="container"><p>Looking for a home that is currently available?</p><a class="btn btn-light" href="/listings" data-link>View available homes ${icon('arrow')}</a></div></section>`;
+}
+
+function renderProject(id) {
+  const project = state.projects.find(item => item.id === id);
+  if (!project) return renderNotFound();
+  state.currentListing = null;
+  document.title = `${project.title} — Completed project`;
+  setMeta(`${project.title}, a completed and sold portfolio project in ${project.location}. Not currently for sale.`);
+  const gallery = project.gallery || [];
+  const galleryMarkup = gallery.length ? `<section class="gallery-section project-gallery"><div class="container"><div class="gallery-header"><div><span class="eyebrow">Project photography</span><h2>Completed spaces</h2></div><p class="muted">Select an image to view it full screen.</p></div><div class="gallery-grid count-${Math.min(gallery.length, 3)} zoomable">${gallery.map((src, index) => `<button class="gallery-item" type="button" data-project-lightbox="${index}" aria-label="Open project photograph ${index + 1}"><img src="${escapeHtml(src)}" alt="${escapeHtml(project.title)} photograph ${index + 1}" loading="lazy"><span class="zoom-cue">${icon('zoom')}</span></button>`).join('')}</div></div></section>` : '';
+  const modelMarkup = project.modelUrl ? `<section class="model-section"><div class="container model-grid"><div><span class="eyebrow">Interactive project view</span><h2>Explore the 3D model.</h2><p>Rotate, zoom, and move through a digital record of the completed project.</p></div><div class="model-frame"><iframe title="3D model of ${escapeHtml(project.title)}" src="${escapeHtml(project.modelUrl)}" loading="lazy" allow="autoplay; fullscreen; xr-spatial-tracking" allowfullscreen></iframe></div></div></section>` : '';
+  main.innerHTML = `<article class="project-detail">
+    <header class="project-detail-hero"><img src="${escapeHtml(project.mainImage)}" alt="${escapeHtml(project.title)} in ${escapeHtml(project.location)}" width="1800" height="1150"><div class="project-detail-overlay"><span class="sold-stamp">Sold · Not for sale</span>${project.highProfile ? '<span class="project-distinction">Signature work</span>' : ''}<h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.location)}</p></div></header>
+    <section class="container project-intro"><div class="project-facts"><div><span>Completed</span><strong>${escapeHtml(project.completedYear)}</strong></div><div><span>Project type</span><strong>${escapeHtml(project.projectType || 'Residential')}</strong></div>${project.area ? `<div><span>Built area</span><strong>${escapeHtml(project.area)}</strong></div>` : ''}<div><span>Availability</span><strong>Sold</strong></div></div><div class="project-story"><span class="eyebrow">The completed work</span><div class="prose">${project.description || '<p>Project details are being documented.</p>'}</div><div class="not-for-sale-panel"><strong>This is a previous project.</strong><p>It has been sold and is shown only as an example of our completed work.</p><a href="/listings" data-link>See homes currently available ${icon('arrow')}</a></div></div></section>
+    ${galleryMarkup}${modelMarkup}
+  </article>`;
+  document.querySelectorAll('[data-project-lightbox]').forEach(button => button.addEventListener('click', () => openLightbox(gallery, Number(button.dataset.projectLightbox), project.title)));
+}
+
 function renderHome() {
   state.currentListing = null;
   const selectedFeatured = state.listings.filter(item => item.featured);
   const featured = (selectedFeatured.length ? selectedFeatured : state.listings).slice(0, 3);
   const heroListing = featured[0] || state.listings[0];
+  const portfolioPreview = state.projects.filter(item => item.featured).sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear)).slice(0, 3);
   const heroVisual = heroListing ? `<a class="hero-visual" href="/listing/${encodeURIComponent(heroListing.id)}" data-link aria-label="View ${escapeHtml(heroListing.title)}">
       <img src="${escapeHtml(heroListing.mainImage)}" alt="${escapeHtml(heroListing.title)}, a newly built home in ${escapeHtml(heroListing.location)}" width="1400" height="1200">
       <div class="hero-caption"><span>${heroListing.status === 'ready' ? 'Ready to visit' : 'Now in progress'}</span><strong>${escapeHtml(heroListing.title)} · ${escapeHtml(heroListing.location)}</strong></div>
@@ -191,6 +238,7 @@ function renderHome() {
     <div class="section-top"><div><span class="eyebrow">Available now</span><h2 class="section-heading small">A small, considered collection.</h2></div><a class="btn btn-outline" href="/listings" data-link>See all homes ${icon('arrow')}</a></div>
     <div class="listing-grid">${featured.length ? featured.map(listingCard).join('') : '<div class="empty-state"><h2>New homes are being prepared.</h2><p>Contact the owner directly to hear about upcoming availability.</p></div>'}</div>
   </div></section>
+  ${portfolioPreview.length ? `<section class="home-portfolio"><div class="container"><div class="section-top"><div><span class="eyebrow">Completed work</span><h2 class="section-heading small">Built, sold, and part of our story.</h2><p>Previous projects are shown as a record of our work. They are not currently for sale.</p></div><a class="btn btn-outline" href="/portfolio" data-link>Explore the portfolio ${icon('arrow')}</a></div><div class="portfolio-grid home-portfolio-grid">${portfolioPreview.map((project, index) => projectCard(project, index === 0 && project.highProfile)).join('')}</div></div></section>` : ''}
   <section id="approach" class="philosophy"><div class="container philosophy-grid">
     <div><span class="eyebrow">How we build</span><h2>Quiet choices. Enduring homes.</h2></div>
     <div class="principles">
@@ -314,7 +362,7 @@ function renderLogin() {
 }
 
 function renderAdminShell() {
-  main.innerHTML = `<section class="admin-page"><div class="admin-shell"><aside class="admin-sidebar"><h2>Owner dashboard</h2><nav class="admin-nav" aria-label="Dashboard"><button type="button" data-admin-tab="listings">Listings</button><button type="button" data-admin-tab="settings">Contact & tags</button></nav><button class="btn btn-light btn-small" id="admin-logout" type="button">Sign out</button></aside><div class="admin-content" id="admin-content"></div></div></section>`;
+  main.innerHTML = `<section class="admin-page"><div class="admin-shell"><aside class="admin-sidebar"><h2>Owner dashboard</h2><nav class="admin-nav" aria-label="Dashboard"><button type="button" data-admin-tab="listings">Listings</button><button type="button" data-admin-tab="portfolio">Previous projects</button><button type="button" data-admin-tab="settings">Contact & tags</button></nav><button class="btn btn-light btn-small" id="admin-logout" type="button">Sign out</button></aside><div class="admin-content" id="admin-content"></div></div></section>`;
   document.querySelectorAll('[data-admin-tab]').forEach(button => button.addEventListener('click', () => {
     state.admin.tab = button.dataset.adminTab;
     state.admin.editing = null;
@@ -327,6 +375,8 @@ function renderAdminShell() {
 function drawAdminTab() {
   document.querySelectorAll('[data-admin-tab]').forEach(button => button.classList.toggle('active', button.dataset.adminTab === state.admin.tab));
   if (state.admin.tab === 'settings') drawSettingsForm();
+  else if (state.admin.tab === 'portfolio' && state.admin.editing !== null) drawProjectForm(state.admin.editing);
+  else if (state.admin.tab === 'portfolio') drawAdminProjects();
   else if (state.admin.editing !== null) drawListingForm(state.admin.editing);
   else drawAdminListings();
 }
@@ -355,6 +405,78 @@ function confirmDelete(id) {
       closeModal(); drawAdminListings(); toast('Listing deleted.');
     } catch (error) { toast(error.message); }
   };
+}
+
+function drawAdminProjects() {
+  const projects = state.admin.data.projects || [];
+  const signatureCount = projects.filter(item => item.highProfile).length;
+  const modelCount = projects.filter(item => item.modelUrl).length;
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><span class="eyebrow">Completed-work archive</span><h1>Previous projects</h1><p>Showcase sold work without mixing it with homes currently for sale.</p></div><button class="btn" id="add-project" type="button">Add previous project</button></div><div class="admin-stats admin-stats-three"><div><span>Portfolio projects</span><strong>${projects.length}</strong></div><div><span>Signature projects</span><strong>${signatureCount}</strong></div><div><span>3D models</span><strong>${modelCount}</strong></div></div><div class="admin-panel"><div class="admin-list">${projects.length ? projects.map(project => `<article class="admin-listing"><img src="${escapeHtml(project.mainImage)}" alt=""><div><div class="admin-listing-flags"><span>Sold</span>${project.highProfile ? '<span>Signature work</span>' : ''}${project.modelUrl ? '<span>3D model</span>' : ''}</div><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.location)} · Completed ${escapeHtml(project.completedYear)}</p><small>Portfolio only · Not for sale</small></div><div class="admin-listing-actions"><a class="btn btn-outline btn-small" href="/project/${encodeURIComponent(project.id)}" data-link>View</a><button class="btn btn-outline btn-small" type="button" data-edit-project="${escapeHtml(project.id)}">Edit</button><button class="btn btn-danger btn-small" type="button" data-delete-project="${escapeHtml(project.id)}">Delete</button></div></article>`).join('') : '<div class="empty-state"><h2>No previous projects added yet.</h2><p>Add completed work here. Every project will automatically be marked sold and not for sale.</p></div>'}</div></div>`;
+  document.querySelector('#add-project').onclick = () => { state.admin.editing = 'new'; drawAdminTab(); };
+  document.querySelectorAll('[data-edit-project]').forEach(button => button.onclick = () => { state.admin.editing = button.dataset.editProject; drawAdminTab(); });
+  document.querySelectorAll('[data-delete-project]').forEach(button => button.onclick = () => confirmProjectDelete(button.dataset.deleteProject));
+}
+
+function confirmProjectDelete(id) {
+  const project = (state.admin.data.projects || []).find(item => item.id === id);
+  modalRoot.innerHTML = `<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-project-title"><div class="confirm-card"><h2 id="delete-project-title">Delete this portfolio project?</h2><p>“${escapeHtml(project.title)}” will be removed from the previous-projects archive. Live listings are not affected.</p><div class="confirm-actions"><button class="btn btn-outline" type="button" id="cancel-delete-project">Keep project</button><button class="btn btn-danger" type="button" id="confirm-delete-project">Delete</button></div></div></div>`;
+  document.body.classList.add('no-scroll');
+  document.querySelector('#cancel-delete-project').onclick = closeModal;
+  document.querySelector('#confirm-delete-project').onclick = async () => {
+    try {
+      await api(`/api/admin/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      state.admin.data = await api('/api/admin/data');
+      state.projects = (await api('/api/projects')).projects;
+      closeModal(); drawAdminProjects(); toast('Portfolio project deleted.');
+    } catch (error) { toast(error.message); }
+  };
+}
+
+function drawProjectForm(id) {
+  const isNew = id === 'new';
+  const project = isNew ? { title: '', location: '', completedYear: new Date().getFullYear(), projectType: '', area: '', description: '<p></p>', mainImage: '', gallery: [], featured: true, highProfile: false, modelUrl: '' } : (state.admin.data.projects || []).find(item => item.id === id);
+  if (!project) { state.admin.editing = null; return drawAdminProjects(); }
+  state.admin.mainImage = project.mainImage || '';
+  state.admin.gallery = [...(project.gallery || [])];
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${isNew ? 'Add previous project' : 'Edit previous project'}</h1><p>Portfolio projects are always displayed as sold and not currently for sale.</p></div></div>
+  <form class="admin-panel" id="project-form"><div id="form-error"></div><div class="sold-form-notice"><strong>Permanent customer label</strong><span>This project will show “Sold · Portfolio project” across the public site.</span></div><div class="form-grid">
+    <div class="field full"><label for="project-title">Project title</label><input id="project-title" name="title" value="${escapeHtml(project.title)}" required maxlength="90"></div>
+    <div class="field"><label for="project-location">Location</label><input id="project-location" name="location" value="${escapeHtml(project.location)}" placeholder="Madurai, Tamil Nadu"></div>
+    <div class="field"><label for="completedYear">Completion year</label><input id="completedYear" name="completedYear" type="number" min="1900" max="${new Date().getFullYear()}" value="${escapeHtml(project.completedYear)}" required></div>
+    <div class="field"><label for="projectType">Project type</label><input id="projectType" name="projectType" value="${escapeHtml(project.projectType)}" placeholder="Luxury villa, apartment, community"></div>
+    <div class="field"><label for="project-area">Built area</label><input id="project-area" name="area" value="${escapeHtml(project.area)}" placeholder="e.g. 8,400 sq ft"></div>
+    <div class="field full"><label for="modelUrl">Sketchfab 3D embed URL</label><input id="modelUrl" name="modelUrl" type="url" value="${escapeHtml(project.modelUrl)}" placeholder="https://sketchfab.com/models/.../embed"><small>Optional. Paste the Sketchfab embed URL when the 3D model is ready.</small></div>
+    <div class="field toggle-field"><input id="project-featured" name="featured" type="checkbox" ${project.featured ? 'checked' : ''}><label for="project-featured">Show in homepage portfolio preview</label></div>
+    <div class="field toggle-field"><input id="highProfile" name="highProfile" type="checkbox" ${project.highProfile ? 'checked' : ''}><label for="highProfile">Mark as signature / high-profile work</label></div>
+  </div>
+  <div class="form-section"><h2>Project story</h2><p>Explain the brief, scale, design decisions, and outcome. Do not include sales language.</p></div>
+  <div class="editor-toolbar" aria-label="Text formatting"><button type="button" data-command="bold" title="Bold"><strong>B</strong></button><button type="button" data-command="italic" title="Italic"><em>I</em></button><button type="button" data-command="insertUnorderedList" title="Bulleted list">• List</button></div><div class="rich-editor" id="project-description" contenteditable="true" role="textbox" aria-multiline="true">${project.description}</div>
+  <div class="form-section"><h2>Project photography</h2><p>Add the strongest completed view first, then supporting exterior and interior photographs.</p></div>
+  <div class="form-grid"><div class="field full"><span>Main portfolio image</span><div class="upload-zone"><input id="project-main-upload" type="file" accept="image/*"><small>Recommended: landscape, at least 1600px wide.</small><div class="image-previews" id="main-preview"></div></div></div><div class="field full"><span>Project gallery</span><div class="upload-zone"><input id="project-gallery-upload" type="file" accept="image/*" multiple><small>Add up to 20 project images.</small><div class="image-previews" id="gallery-previews"></div></div></div></div>
+  <div class="form-actions"><button class="btn btn-outline" type="button" id="cancel-project">Cancel</button><button class="btn" type="submit">${isNew ? 'Publish project' : 'Save project'}</button></div></form>`;
+  drawImagePreviews();
+  document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => { document.execCommand(button.dataset.command, false); document.querySelector('#project-description').focus(); }));
+  document.querySelector('#project-main-upload').addEventListener('change', async event => {
+    const file = event.target.files[0]; if (!file) return;
+    try { state.admin.mainImage = await compressImage(file, 2000, .84); drawImagePreviews(); toast('Main project image optimized.'); } catch (error) { toast(error.message); }
+  });
+  document.querySelector('#project-gallery-upload').addEventListener('change', async event => {
+    const files = [...event.target.files].slice(0, 20 - state.admin.gallery.length);
+    try { for (const file of files) state.admin.gallery.push(await compressImage(file, 1700, .8)); drawImagePreviews(); toast(`${files.length} ${files.length === 1 ? 'image' : 'images'} optimized.`); } catch (error) { toast(error.message); }
+  });
+  document.querySelector('#cancel-project').onclick = () => { state.admin.editing = null; drawAdminTab(); };
+  document.querySelector('#project-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget; const submit = form.querySelector('[type=submit]'); submit.disabled = true;
+    const data = Object.fromEntries(new FormData(form));
+    const payload = { ...data, completedYear: Number(data.completedYear), description: document.querySelector('#project-description').innerHTML, mainImage: state.admin.mainImage, gallery: state.admin.gallery, featured: document.querySelector('#project-featured').checked, highProfile: document.querySelector('#highProfile').checked };
+    if (!payload.mainImage) { document.querySelector('#form-error').innerHTML = '<p class="error-message">Add a main project image before publishing.</p>'; submit.disabled = false; return; }
+    try {
+      await api(isNew ? '/api/admin/projects' : `/api/admin/projects/${encodeURIComponent(project.id)}`, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
+      state.admin.data = await api('/api/admin/data'); state.projects = (await api('/api/projects')).projects; state.admin.editing = null; drawAdminProjects(); toast(isNew ? 'Previous project published.' : 'Project changes saved.');
+    } catch (error) { document.querySelector('#form-error').innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
+    finally { submit.disabled = false; }
+  });
 }
 
 function drawListingForm(id) {
@@ -515,15 +637,18 @@ function setMeta(description) {
 async function renderRoute() {
   try {
     if (!state.settings) {
-      const [settingsData, listingsData] = await Promise.all([api('/api/settings'), api('/api/listings')]);
+      const [settingsData, listingsData, projectsData] = await Promise.all([api('/api/settings'), api('/api/listings'), api('/api/projects')]);
       state.settings = settingsData.settings;
       state.listings = listingsData.listings;
+      state.projects = projectsData.projects;
     }
     const path = decodeURIComponent(location.pathname).replace(/\/+$/, '') || '/';
     renderChrome();
     if (path === '/') renderHome();
     else if (path === '/listings') renderListings();
     else if (path.startsWith('/listing/')) renderListing(path.slice('/listing/'.length));
+    else if (path === '/portfolio') renderPortfolio();
+    else if (path.startsWith('/project/')) renderProject(path.slice('/project/'.length));
     else if (path === '/admin') await renderAdmin();
     else renderNotFound();
     renderChrome();

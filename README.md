@@ -21,6 +21,8 @@ If `ADMIN_PASSWORD` is not set, the local demo password is `aaranya-demo`. Alway
 
 The Telegram bot is part of this same Node backend. It receives Telegram updates at `/api/telegram/webhook`, uses the same listing validation and write functions as the browser admin panel, and saves listings to the same Supabase `site_store` row. Vercel hosts it as an HTTPS webhook, so there is no long-running polling process to keep alive. Multiple authorized owners can use the bot, with an independent saved conversation for each owner.
 
+The public site also has a separate Previous Projects portfolio at `/portfolio`. Portfolio projects are stored in the same Supabase site store but are never mixed with available listings. Every portfolio card and detail page is permanently labelled sold/not for sale. Owners can add and edit project photography, completion details, signature-project status, homepage visibility, and an optional Sketchfab embed URL from the Previous Projects dashboard tab.
+
 Available owner commands:
 
 - `/newlisting` — guided listing creation with main photo, gallery, badge, zoom, and optional construction progress
