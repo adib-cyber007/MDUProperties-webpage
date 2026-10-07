@@ -4,14 +4,27 @@
   "private": true,
   "description": "Boutique real-estate listing website with a single-owner dashboard",
   "scripts": {
+    "build": "node scripts/build-3d.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check telegram-bot.js && node --check public/app.js && node --check scripts/configure-telegram-webhook.js && node --check scripts/get-telegram-chat-id.js",
-    "test": "node --test",
+    "start:floorplan": "node scripts/start-floorplan.js",
+    "test:floorplan:browser": "node scripts/verify-floorplan-browser.js",
+    "test:floorplan:colored": "node scripts/verify-colored-floorplan-browser.js",
+    "test:walkthrough:browser": "npm run build && node scripts/verify-walkthrough-browser.js",
+    "evaluate:floorplan": "node scripts/evaluate-floorplan.js",
+    "check": "node --check src/floor-plan-walkthrough.cjs && node --check scripts/verify-walkthrough-browser.js && node --check server.js && node --check floor-plan-ai.js && node --check floor-plan-recognition.js && node --check telegram-bot.js && node --check public/app.js && node --check public/model-projects.js && node --check public/floor-plan-ui.js && node --check public/floor-plan-finishes.js && node --check public/floor-plan-design.js && node --check public/building-ui.js && node --check public/floor-plan-detection.js && node --check public/floor-plan-openings.js && node --check public/floor-plan-furniture.js && node --check public/floor-plan-worker.js && node --check public/floor-plan-geometry.js && node --check scripts/start-floorplan.js && node --check scripts/verify-floorplan-browser.js && node --check scripts/evaluate-floorplan.js && node --check scripts/configure-telegram-webhook.js && node --check scripts/get-telegram-chat-id.js && node scripts/build-3d.js",
+    "test": "node scripts/test.js",
     "telegram:chat-id": "node scripts/get-telegram-chat-id.js",
     "telegram:webhook": "node scripts/configure-telegram-webhook.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "^1.63.0"
   }
 }

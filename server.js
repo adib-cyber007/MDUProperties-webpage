@@ -5,10 +5,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { createTelegramBot, parseTelegramOwnerIds } = require('./telegram-bot');
+const { validate: validateFloorPlan } = require('./public/floor-plan-geometry');
 
 const PORT = Number(process.env.PORT || 43821);
-const HOST = process.env.HOST || '127.0.0.1';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.VERCEL ? '' : 'aaranya-demo');
+const PRODUCTION = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+const HOST = process.env.HOST || (PRODUCTION ? '0.0.0.0' : '127.0.0.1');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (PRODUCTION ? '' : 'aaranya-demo');
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
@@ -24,6 +26,8 @@ const STORE_FILE = path.join(DATA_DIR, 'store.json');
 const SESSION_TTL = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 const loginAttempts = new Map();
+const designRequests = new WeakMap();
+const recognitionRequests = new WeakMap();
 const localTelegramStates = new Map();
 let serverlessStore = null;
 let lastSupabaseFailureAt = 0;
@@ -64,6 +68,7 @@ function defaultData() {
       updatedDays: 7
     },
     projects: [],
+    models: [],
     listings: [
       {
         id: 'courtyard-house',
@@ -174,6 +179,7 @@ function validateStore(data) {
     throw new Error('Supabase returned an invalid site store.');
   }
   if (!Array.isArray(data.projects)) data.projects = [];
+  if (!Array.isArray(data.models)) data.models = [];
   return data;
 }
 
@@ -303,6 +309,7 @@ function publicListing(listing, settings) {
   const updated = new Date(listing.updatedAt).getTime();
   return {
     ...listing,
+    floorPlan: publishedModel(listing) ? listing.floorPlan : null,
     tags: {
       isNew: now - published <= Number(settings.newDays || 14) * 86400000,
       isUpdated: updated > published && now - updated <= Number(settings.updatedDays || 7) * 86400000
@@ -451,6 +458,7 @@ function validateListing(input, existing, current) {
     gallery: Array.isArray(input.gallery) ? input.gallery.map(cleanUrl).filter(Boolean).slice(0, 16) : [],
     zoomEnabled: Boolean(input.zoomEnabled),
     featured: Boolean(input.featured),
+    floorPlan: validateFloorPlan(input.floorPlan),
     progress: status === 'construction' && Array.isArray(input.progress) ? input.progress.map(item => ({
       stage: cleanText(item.stage, 60),
       date: /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') ? item.date : '',
@@ -495,6 +503,7 @@ function validatePortfolioProject(input, existing, current) {
     featured: Boolean(input.featured),
     highProfile: Boolean(input.highProfile),
     modelUrl,
+    floorPlan: validateFloorPlan(input.floorPlan),
     createdAt: current?.createdAt || now,
     updatedAt: now
   };
@@ -507,6 +516,30 @@ async function createPortfolioProject(input) {
   store.projects.unshift(project);
   await writeStore(store);
   return project;
+}
+
+function publishedModel(model) {
+  return Boolean(model.floorPlan?.published && require('./public/floor-plan-geometry').hasGeometry(model.floorPlan));
+}
+
+function publicPortfolioProject(project) {
+  return { ...project, floorPlan: publishedModel(project) ? project.floorPlan : null };
+}
+
+async function saveModelProject(input, id) {
+  const store = await readStoreForManagement();
+  store.models ||= [];
+  const current = id ? store.models.find(item => item.id === id) : null;
+  if (id && !current) throw Object.assign(new Error('3D project not found.'), { status: 404 });
+  const data = { ...current, ...input };
+  const title = cleanText(data.title, 90);
+  if (!title) throw Object.assign(new Error('A 3D project name is required.'), { status: 400 });
+  const now = new Date().toISOString();
+  const model = { id: current?.id || slugify(title, store.models), title, location: cleanText(data.location, 140), description: cleanText(data.description, 2000), floorPlan: validateFloorPlan(data.floorPlan), createdAt: current?.createdAt || now, updatedAt: now };
+  if (current) store.models[store.models.indexOf(current)] = model;
+  else store.models.unshift(model);
+  await writeStore(store);
+  return model;
 }
 
 async function updatePortfolioProject(id, patch) {
@@ -589,6 +622,40 @@ function securityHeaders() {
 }
 
 async function handleApi(req, res, url) {
+  if (url.pathname === '/api/admin/floor-plan-recognition') {
+    if (!requireAuth(req, res)) return;
+    if (!sameOrigin(req) && !['GET', 'HEAD'].includes(req.method)) return sendJson(res, 403, { error: 'Request origin was rejected.' });
+    const { createRecognizer } = require('./floor-plan-recognition');
+    const recognizer = createRecognizer();
+    if (req.method === 'GET') return sendJson(res, 200, await recognizer.status());
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+    const session = getSession(req), previous = recognitionRequests.get(session);
+    const recent = (previous?.recent || []).filter(at => at > Date.now() - 60000);
+    if (previous?.busy || recent.length >= 6) return sendJson(res, 429, { error: 'Recognition is busy. Wait a moment before trying again.' });
+    const body = await readJson(req, 2600000);
+    recent.push(Date.now()); recognitionRequests.set(session, { busy: true, recent });
+    const controller = new AbortController();
+    const cancel = () => { if (!res.writableEnded) controller.abort(); };
+    res.once('close', cancel);
+    try { return sendJson(res, 200, await recognizer.analyze(body, controller.signal)); }
+    finally { res.off('close', cancel); recognitionRequests.set(session, { busy: false, recent }); }
+  }
+  if (url.pathname === '/api/admin/design-surprise') {
+    if (!requireAuth(req, res)) return;
+    if (req.method === 'GET') return sendJson(res, 200, { configured: Boolean(process.env.AI_DESIGN_API_KEY || process.env.OPENAI_API_KEY) });
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+    const session = getSession(req), previous = designRequests.get(session);
+    const recent = (previous?.recent || []).filter(at => at > Date.now() - 60000);
+    if (previous?.busy || recent.length >= 10) return sendJson(res, 429, { error: 'The designer is busy. Wait a moment before trying another.' });
+    // Eight floors with per-wall inside/outside lock references can exceed
+    // 80 KB. The designer still bounds floors, segments and every finish.
+    const body = await readJson(req, 1024 * 1024);
+    recent.push(Date.now()); designRequests.set(session, { busy: true, recent });
+    try {
+      const { createDesigner } = require('./floor-plan-ai');
+      return sendJson(res, 200, await createDesigner().generate(body));
+    } finally { designRequests.set(session, { busy: false, recent }); }
+  }
   if (url.pathname === '/api/telegram/webhook') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
     if (!TELEGRAM_CONFIGURED) return sendJson(res, 503, { error: 'Telegram bot is not configured.' });
@@ -645,12 +712,38 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { settings: store.settings });
   }
   if (req.method === 'GET' && url.pathname === '/api/projects') {
-    return sendJson(res, 200, { projects: store.projects || [] });
+    return sendJson(res, 200, { projects: (store.projects || []).map(publicPortfolioProject) });
   }
   if (req.method === 'GET' && url.pathname.startsWith('/api/projects/')) {
     const id = decodeURIComponent(url.pathname.split('/').pop());
     const project = (store.projects || []).find(item => item.id === id);
-    return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Portfolio project not found.' });
+    return project ? sendJson(res, 200, { project: publicPortfolioProject(project) }) : sendJson(res, 404, { error: 'Portfolio project not found.' });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/models') {
+    return sendJson(res, 200, { models: (store.models || []).filter(publishedModel) });
+  }
+  if (req.method === 'GET' && url.pathname.startsWith('/api/models/')) {
+    const model = (store.models || []).find(item => item.id === decodeURIComponent(url.pathname.split('/').pop()) && publishedModel(item));
+    return model ? sendJson(res, 200, { model }) : sendJson(res, 404, { error: '3D project not found.' });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/admin/models') {
+    if (!requireAuth(req, res)) return;
+    return sendJson(res, 201, { model: await saveModelProject(await readJson(req)) });
+  }
+  const modelMatch = url.pathname.match(/^\/api\/admin\/models\/([^/]+)$/);
+  if (modelMatch && req.method === 'PUT') {
+    if (!requireAuth(req, res)) return;
+    return sendJson(res, 200, { model: await saveModelProject(await readJson(req), decodeURIComponent(modelMatch[1])) });
+  }
+  if (modelMatch && req.method === 'DELETE') {
+    if (!requireAuth(req, res)) return;
+    const managementStore = await readStoreForManagement();
+    const id = decodeURIComponent(modelMatch[1]);
+    const models = managementStore.models || [];
+    if (!models.some(item => item.id === id)) return sendJson(res, 404, { error: '3D project not found.' });
+    managementStore.models = models.filter(item => item.id !== id);
+    await writeStore(managementStore);
+    return sendJson(res, 200, { deleted: true });
   }
   if (req.method === 'GET' && url.pathname === '/api/session') {
     return sendJson(res, 200, { authenticated: Boolean(getSession(req)) });
@@ -763,11 +856,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (require.main === module) {
+// Vercel imports this entrypoint and captures listen() during module startup.
+// Ordinary imports remain inert so tests and other local callers own the port.
+if (require.main === module || process.env.VERCEL) {
   ensureStore();
   server.listen(PORT, HOST, () => {
     console.log(`Madurai Dream Properties is running at http://${HOST}:${PORT}`);
-    if (!process.env.ADMIN_PASSWORD) console.log('Demo owner password: aaranya-demo (set ADMIN_PASSWORD before production use)');
+    if (!PRODUCTION && !process.env.ADMIN_PASSWORD) console.log('Demo owner password: aaranya-demo (set ADMIN_PASSWORD before production use)');
   });
 }
 

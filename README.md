@@ -1,6 +1,21 @@
 # Madurai Dream Properties
 
-A complete boutique real-estate listing site with a single-owner dashboard. It runs on Node.js without third-party packages.
+A boutique real-estate listing site with a single-owner dashboard, optional 3D building previews and first-person walkthroughs. A Node.js server serves the site; Three.js is bundled locally and loaded when a 3D view opens.
+
+## Development with Codex Cloud
+
+See [CODEX-CLOUD.md](CODEX-CLOUD.md) for Linux dependency installation, model
+downloads, cloud environment publishing, startup and verification. `AGENTS.md`
+describes the project and recognition behavior that future changes must preserve.
+Use `bash scripts/codex-setup.sh` for the full CPU recognition environment, or
+append `web` for website-only work. Generated environments and model weights are
+not committed; a fresh checkout prepares them through the setup script.
+
+## 3D walkthrough and hosting
+
+Published models on listings, previous projects and 3D showcases now include **Walk through**, adapted from FLRplanner. Drag to look and hold W A S D, arrow keys or the on-screen movement buttons to explore rooms and doorways. Choose a floor for multi-floor buildings, use Home to restart, and Escape or **Exit walkthrough** to return to the overview. Walls, windows and furniture block movement. The owner previews use the same controls.
+
+The walkthrough runs in the browser using saved models, with no local FLRplanner or recognition service required. See [HOSTING.md](HOSTING.md) for the Vercel configuration, server environment and verification commands. See [FLOOR-PLAN-3D.md](FLOOR-PLAN-3D.md) for creating and publishing a model.
 
 ## Durable listings with Supabase
 
@@ -9,11 +24,31 @@ Production listings and contact settings live in Supabase's RLS-protected `publi
 ## Run locally
 
 ```powershell
+npm ci
+npm run build
 $env:ADMIN_PASSWORD='choose-a-strong-password'
-node server.js
+npm start
 ```
 
 Open `http://127.0.0.1:43821`. The owner dashboard is at `/admin`. You can choose another port with the `PORT` environment variable.
+
+For pretrained floor-plan recognition, use `npm run start:floorplan` instead of
+`npm start` once the Python environment and checkpoint are installed. This starts
+both the recognition service and the website with their connection configured.
+See [services/floorplan/README.md](services/floorplan/README.md) for setup.
+Automatic recognition uses the restored FLRplanner-derived CubiCasa5K pipeline
+for walls, doors, windows, room predictions and fixture suggestions, together with
+the browser's movable furniture proposals. Review the tracing and accept furniture
+suggestions before saving. Saved models remain unchanged until re-detected and
+saved. The MitUNet/OCR combination is an optional comparison engine selected with
+`FLOORPLAN_ENGINE=mitunet`; it is no longer the default. Published model weights
+restrict commercial use; the service setup documents online hosting and licensing.
+
+The editor also has a separate **Coloured walls** method for solid coloured,
+horizontal/vertical wall strips. **Automatic** selects it only when a strong
+filled-wall network is found; other images use the original FLRplanner detector.
+Choose **FLRplanner** to force the original output. See
+[the research and image verification](FLOOR-PLAN-RECOGNITION-RESEARCH.md).
 
 If `ADMIN_PASSWORD` is not set, the local demo password is `aaranya-demo`. Always set a unique password before making the site publicly accessible.
 
@@ -115,4 +150,4 @@ Set `ADMIN_PASSWORD`, serve behind HTTPS, and use durable persistent storage on 
 
 ### Vercel deployment
 
-Vercel detects `server.js` as the Node entrypoint, preserving the public website, API routes, Telegram webhook, and single-page navigation. Production listing data and Telegram conversation state are durable in Supabase. Set `ADMIN_PASSWORD` and all four `TELEGRAM_*` secrets in Vercel’s Production Environment Variables. Until `ADMIN_PASSWORD` is set, owner sign-in is intentionally disabled; until the bot variables are complete, the webhook returns a configuration error and cannot process updates.
+The checked-in `vercel.json` configures the Node entrypoint, reproducible installation and browser viewer build, preserving the public website, API routes, Telegram webhook and single-page navigation. Production listing/model data and Telegram conversation state are durable in the configured Supabase store. Set `ADMIN_PASSWORD` and the Supabase variables; configure the `TELEGRAM_*` secrets if using the optional bot. Owner sign-in is disabled until `ADMIN_PASSWORD` is set. See [HOSTING.md](HOSTING.md) for the complete setup.

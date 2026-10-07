@@ -1,6 +1,9 @@
-# Runtime data is intentionally excluded: Vercel instances must start from the
-# built-in seed collection until a durable data store is connected.
-data/store.json
-data/*.tmp
+# Live listings/models are stored in Supabase, never in an uploaded local store.
+data/
 .playwright-mcp/
 .vercel/
+work/
+test/
+# Recognition is an optional, separately hosted HTTP service. The public
+# walkthrough is bundled JavaScript and needs none of these local model files.
+services/

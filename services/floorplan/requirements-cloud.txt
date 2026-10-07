@@ -1,0 +1,10 @@
+# Portable direct dependencies for the default CubiCasa + coloured-wall service.
+# Python 3.12. Install CPU torch/torchvision separately (scripts/codex-setup.sh).
+# Keep the Windows pip freeze in requirements-lock.txt as a local reference.
+numpy==2.5.3
+Pillow==12.3.0
+opencv-python-headless==5.0.0.93
+scikit-image==0.26.0
+fastapi==0.142.2
+uvicorn==0.54.0
+gdown==6.4.1

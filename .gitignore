@@ -6,3 +6,7 @@ node_modules/
 npm-debug.log*
 .playwright-mcp/
 .vercel
+work/
+services/floorplan/.venv/
+services/floorplan/models/
+__pycache__/
