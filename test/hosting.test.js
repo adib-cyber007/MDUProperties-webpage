@@ -4,35 +4,55 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
-test('Vercel can import the entrypoint, serve website routes and the bundled walkthrough, and require a production owner password', async () => {
-  const env = { ...process.env, NODE_ENV: 'production', VERCEL: '1', PORT: '0' };
-  for (const key of ['HOST', 'ADMIN_PASSWORD', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TELEGRAM_BOT_TOKEN']) delete env[key];
-  const probe = `
-    const server = require('./server.js');
-    server.once('listening', async () => {
-      try {
-        const base = 'http://127.0.0.1:' + server.address().port;
-        const routes = [];
-        for (const route of ['/', '/listings', '/3d-projects', '/admin', '/api/listings', '/api/models', '/floor-plan-renderer.js']) {
-          const response = await fetch(base + route), body = await response.text();
-          routes.push({ route, status: response.status, type: response.headers.get('content-type'), bytes: body.length });
-        }
-        const login = await fetch(base + '/api/login', { method: 'POST', body: JSON.stringify({ password: 'aaranya-demo' }) });
-        console.log('HOST_REPORT:' + JSON.stringify({ address: server.address().address, routes, loginStatus: login.status }));
-      } catch (error) { console.error(error); process.exitCode = 1; }
-      finally { server.close(); }
+test('Vercel imports a callable handler without opening a port', async t => {
+  for (const vercel of [true, false]) {
+    await t.test(vercel ? 'with Vercel system variables' : 'without Vercel system variables', async () => {
+      const env = { ...process.env, NODE_ENV: 'production' };
+      for (const key of ['NODE_TEST_CONTEXT', 'VERCEL', 'HOST', 'PORT', 'ADMIN_PASSWORD', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TELEGRAM_BOT_TOKEN']) delete env[key];
+      if (vercel) env.VERCEL = '1';
+      const probe = `
+        const assert = require('node:assert/strict');
+        const http = require('node:http');
+        const { Readable, Writable } = require('node:stream');
+        http.Server.prototype.listen = () => { throw new Error('Import opened a listening port'); };
+        (async () => {
+          let handler = await import('./server.js');
+          // Vercel unwraps nested CJS/ESM default exports before invocation.
+          for (let i = 0; i < 5 && handler.default; i++) handler = handler.default;
+          assert.equal(typeof handler, 'function', 'Vercel must receive a request handler');
+          assert.equal(require('./server.js').listening, false);
+          async function invoke(route, method = 'GET', body = '') {
+            const request = Readable.from(body ? [Buffer.from(body)] : []);
+            request.url = route; request.method = method;
+            request.headers = { host: 'localhost', 'content-type': 'application/json' };
+            const chunks = [];
+            const response = new Writable({ write(chunk, encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+            response.headersSent = false;
+            response.writeHead = (status, headers) => { response.statusCode = status; response.headers = headers; response.headersSent = true; return response; };
+            const finished = new Promise((resolve, reject) => { response.once('finish', resolve); response.once('error', reject); });
+            await handler(request, response); await finished;
+            return { route, status: response.statusCode, type: response.headers['Content-Type'], bytes: Buffer.concat(chunks).length };
+          }
+          const routes = [];
+          for (const route of ['/', '/listings', '/3d-projects', '/admin', '/floor-plan-renderer.js']) routes.push(await invoke(route));
+          // Only the in-memory demo store is used, with all remote credentials unset.
+          if (process.env.VERCEL) for (const route of ['/api/listings', '/api/models']) routes.push(await invoke(route));
+          const login = await invoke('/api/login', 'POST', JSON.stringify({ password: 'aaranya-demo' }));
+          console.log('HOST_REPORT:' + JSON.stringify({ routes, loginStatus: login.status }));
+        })().catch(error => { console.error(error); process.exitCode = 1; });
+      `;
+      const child = spawn(process.execPath, ['-e', probe], { cwd: path.resolve(__dirname, '..'), env, windowsHide: true });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', value => { stdout += value; }); child.stderr.on('data', value => { stderr += value; });
+      const timeout = setTimeout(() => child.kill(), 10000);
+      const exit = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }).finally(() => clearTimeout(timeout));
+      assert.equal(exit, 0, stderr || stdout);
+      const match = stdout.match(/HOST_REPORT:(.+)/); assert.ok(match, stderr || stdout);
+      const result = JSON.parse(match[1]);
+      assert.ok(result.routes.every(route => route.status === 200 && route.bytes > 0));
+      const renderer = result.routes.find(route => route.route === '/floor-plan-renderer.js');
+      assert.match(renderer.type, /javascript/); assert.ok(renderer.bytes > 100000, 'real browser bundle is served');
+      assert.equal(result.loginStatus, 503, 'production never uses the local demo owner password');
     });
-  `;
-  const child = spawn(process.execPath, ['-e', probe], { cwd: path.resolve(__dirname, '..'), env, windowsHide: true });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', value => { stdout += value; }); child.stderr.on('data', value => { stderr += value; });
-  const timeout = setTimeout(() => child.kill(), 20000);
-  const exit = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }).finally(() => clearTimeout(timeout));
-  assert.equal(exit, 0, stderr || stdout);
-  const match = stdout.match(/HOST_REPORT:(.+)/); assert.ok(match, stdout);
-  const result = JSON.parse(match[1]); assert.equal(result.address, '0.0.0.0');
-  assert.ok(result.routes.every(route => route.status === 200 && route.bytes > 0));
-  const renderer = result.routes.find(route => route.route === '/floor-plan-renderer.js');
-  assert.match(renderer.type, /javascript/); assert.ok(renderer.bytes > 100000, 'real browser bundle is served');
-  assert.equal(result.loginStatus, 503, 'production never uses the local demo owner password');
+  }
 });

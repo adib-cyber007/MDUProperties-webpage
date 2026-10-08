@@ -844,7 +844,7 @@ function serveStatic(req, res, url) {
   fs.createReadStream(file).pipe(res);
 }
 
-const server = http.createServer(async (req, res) => {
+async function requestHandler(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
@@ -854,11 +854,13 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) sendJson(res, error.status || 500, { error: error.status ? error.message : 'Something went wrong on the server.' });
     if (!error.status) console.error(error);
   }
-});
+}
 
-// Vercel imports this entrypoint and captures listen() during module startup.
-// Ordinary imports remain inert so tests and other local callers own the port.
-if (require.main === module || process.env.VERCEL) {
+const server = http.createServer(requestHandler);
+
+// Only a local command owns a listening port. Vercel invokes the exported
+// request handler directly, including when system environment variables are off.
+if (require.main === module) {
   ensureStore();
   server.listen(PORT, HOST, () => {
     console.log(`Madurai Dream Properties is running at http://${HOST}:${PORT}`);
@@ -867,3 +869,4 @@ if (require.main === module || process.env.VERCEL) {
 }
 
 module.exports = server;
+module.exports.default = requestHandler;

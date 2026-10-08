@@ -16,7 +16,7 @@ Configure these encrypted server environment variables before using the owner da
 
 The existing `public.site_store` table must be provisioned using `supabase/migrations/20260813000000_create_site_store.sql`. Saved property, portfolio and standalone 3D models share this store. Public pages can display the demonstration inventory without storage credentials; production management requires the durable store. Keep credentials in the hosting settings, outside browser code and source control.
 
-`server.js` calls `listen()` when Vercel imports it, as required by the [Node.js runtime](https://vercel.com/docs/functions/runtimes/node-js). The same entrypoint handles public routes, the dashboard, property APIs and the existing Telegram webhook. The public viewer uses same-origin assets and API requests. Deployment excludes local data, test output and Python model files.
+`server.js` exposes a default Node.js request handler for the [Vercel runtime](https://vercel.com/docs/functions/runtimes/node-js). Importing it does not open a port; `npm start` still starts the conventional local server. The same entrypoint handles public routes, the dashboard, property APIs and the existing Telegram webhook. The public viewer uses same-origin assets and API requests. Deployment excludes local data, test output and Python model files.
 
 The existing Telegram and AI-design features remain optional; their environment variables are listed in `.env.example`. Floor-plan recognition is also optional and separate from viewing a saved model. To enable automatic recognition for uploads, host the recognition service separately and set `FLOORPLAN_RECOGNITION_URL` to its reachable HTTPS URL, with a matching `FLOORPLAN_SERVICE_TOKEN`. Leave this URL empty when that service is unavailable. Reviewed layout JSON can be imported without recognition.
 
@@ -55,6 +55,6 @@ npm test
 npm run test:walkthrough:browser
 ```
 
-The hosting test imports the server in Vercel production mode and checks startup, network binding, website/API routing, the compiled viewer asset and owner access configuration. The browser test uses a temporary store to verify published property, portfolio and 3D showcase walkthroughs, keyboard movement through doors, collision, touch controls, floor elevations and offsets, look direction during resize, Escape/overview restoration, image export and idle rendering. Its report and screenshots are written to ignored `work/` files.
+The hosting test imports the server in production mode with and without Vercel system variables and checks the exported handler, website/API routing, the compiled viewer asset and owner access configuration without opening a port. The browser test uses a temporary store to verify published property, portfolio and 3D showcase walkthroughs, keyboard movement through doors, collision, touch controls, floor elevations and offsets, look direction during resize, Escape/overview restoration, image export and idle rendering. Its report and screenshots are written to ignored `work/` files.
 
 These checks verify deployment readiness locally. They do not create or publish a deployment.
