@@ -857,6 +857,9 @@ async function requestHandler(req, res) {
 }
 
 const server = http.createServer(requestHandler);
+// Express-compatible handlers keep raw request streams in Vercel's runtime.
+// Its default helpers otherwise consume JSON bodies before readJson sees them.
+requestHandler.listen = server.listen.bind(server);
 
 // Only a local command owns a listening port. Vercel invokes the exported
 // request handler directly, including when system environment variables are off.
