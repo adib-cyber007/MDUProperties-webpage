@@ -12,20 +12,29 @@ from starlette.concurrency import run_in_threadpool
 
 from pipeline import decode_image, make_pipeline, write_artifacts
 from colored_walls import recognize
+from vision_review import VisionReview, make_reviewer, review_result
 
 pipeline = None
 startup_error = None
+reviewer = VisionReview()
+reviewer_error = False
 busy = threading.Lock()
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global pipeline, startup_error
+    global pipeline, startup_error, reviewer, reviewer_error
+    pipeline, startup_error, reviewer, reviewer_error = None, None, VisionReview(), False
     try:
         pipeline = make_pipeline()
     except Exception as error:
         startup_error = str(error)
         print(f"Recognition unavailable: {error}", flush=True)
+    try:
+        reviewer = make_reviewer()
+    except Exception:
+        reviewer_error = True
+        print('Optional vision review is unavailable. Check its local provider configuration.', flush=True)
     yield
 
 
@@ -39,7 +48,15 @@ def health():
             "device": getattr(pipeline, "device", "cpu"), "license": "CC BY-NC 4.0",
             "wallOnly": False, "pipeline": "combined" if engine == "mitunet" else engine,
             "profiles": ["auto", "standard", "colored"] if engine == "cubicasa5k" else ["standard"],
-            "error": "Install the model dependencies, download verified weights, and restart recognition." if startup_error else None}
+            "error": "Install the model dependencies, download verified weights, and restart recognition." if startup_error else None,
+            "visionReview": {**reviewer.status(), "configurationError": reviewer_error}}
+
+
+def analyze_drawing(image, width, depth, mode, profile, vision_review=False):
+    result, rooms, icons = recognize(pipeline, image, width, depth, mode, profile)
+    if vision_review and mode in {'combined', 'walls'}:
+        result = review_result(reviewer, image, result)
+    return result, rooms, icons
 
 
 @app.post("/analyze")
@@ -71,7 +88,10 @@ async def analyze(request: Request):
             mode = body.get("mode", "combined")
             if mode not in {"combined", "walls", "openings", "furniture"}:
                 raise ValueError("Recognition mode must be combined, walls, openings, or furniture.")
-            result, _, _ = await run_in_threadpool(recognize, pipeline, image, width, depth, mode, body.get("profile", "auto"))
+            vision_review = body.get('visionReview', False)
+            if not isinstance(vision_review, bool):
+                raise ValueError('Vision review must be true or false.')
+            result, _, _ = await run_in_threadpool(analyze_drawing, image, width, depth, mode, body.get("profile", "auto"), vision_review)
             return result
         except (ValueError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
@@ -85,6 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", default=os.environ.get("FLOORPLAN_BIND_HOST", "127.0.0.1"))
     parser.add_argument("--mode", choices=["combined", "walls", "openings", "furniture"], default="combined")
     parser.add_argument("--profile", choices=["auto", "standard", "colored"], default="auto")
+    parser.add_argument("--vision-review", action="store_true", help="Review suspicious crops with the configured local vision model")
     parser.add_argument("--image", type=Path, help="Run a single image without starting the API")
     parser.add_argument("--output", type=Path, default=Path("work/floorplan-result"))
     parser.add_argument("--width", type=float, default=30)
@@ -100,6 +121,8 @@ if __name__ == "__main__":
         image = decode_image(f"data:image/{mime};base64," + base64.b64encode(args.image.read_bytes()).decode())
         model = make_pipeline()
         result, rooms, icons = recognize(model, image, args.width, args.depth, args.mode, args.profile)
+        if args.vision_review and args.mode in {'combined', 'walls'}:
+            result = review_result(make_reviewer(), image, result)
         write_artifacts(args.output, result, rooms, icons)
         print(json.dumps({"engine": result["engine"], "walls": len(result["walls"]), "fixtures": len(result["furniture"]),
                           "rooms": len(result["rooms"]), "inferenceMs": result["inferenceMs"], "output": str(args.output)}))

@@ -3,7 +3,7 @@ const G = require('./public/floor-plan-geometry');
 
 function failure(message, status = 502) { return Object.assign(new Error(message), { status }); }
 
-function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '', token = process.env.FLOORPLAN_SERVICE_TOKEN || '', fetchImpl = fetch, timeoutMs = 90000 } = {}) {
+function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '', token = process.env.FLOORPLAN_SERVICE_TOKEN || '', fetchImpl = fetch, timeoutMs = 90000, healthTimeoutMs = 20000 } = {}) {
   function endpoint(route) {
     if (!baseUrl) throw failure('Pretrained recognition is not configured. Start the local recognition service.', 503);
     let url;
@@ -14,7 +14,7 @@ function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '
     return `${url.href.replace(/\/+$/, '')}${route}`;
   }
   async function request(route, body, signal) {
-    const timeout = AbortSignal.timeout(body ? timeoutMs : 2500);
+    const timeout = AbortSignal.timeout(body ? timeoutMs : healthTimeoutMs);
     const init = { method: body ? 'POST' : 'GET', redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}) };
@@ -36,7 +36,8 @@ function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '
   return {
     async status() {
       if (!baseUrl) return { configured: false, ready: false, engine: 'cubicasa5k' };
-      try { const result = await request('/health'); const supported=['mitunet','cubicasa5k'].includes(result.engine); return { configured: true, ready: result.ready === true && supported, engine:supported?result.engine:'cubicasa5k',wallOnly:result.wallOnly===true,pipeline:result.pipeline||result.engine }; }
+      try { const result = await request('/health'); const supported=['mitunet','cubicasa5k'].includes(result.engine); return { configured: true, ready: result.ready === true && supported, engine:supported?result.engine:'cubicasa5k',wallOnly:result.wallOnly===true,pipeline:result.pipeline||result.engine,
+        visionReview:{enabled:result.visionReview?.enabled===true,provider:['ollama','laya-vision'].includes(result.visionReview?.provider)?result.visionReview.provider:'off',configurationError:result.visionReview?.configurationError===true} }; }
       catch { return { configured: true, ready: false, engine: 'cubicasa5k' }; }
     },
     async analyze(body, signal) {
@@ -47,8 +48,16 @@ function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '
       if(!['combined','walls','openings','furniture'].includes(mode))throw failure('Choose combined, wall, opening, or furniture recognition.',400);
       const profile=body?.profile??'auto';
       if(!['auto','standard','colored'].includes(profile))throw failure('Choose automatic, FLRplanner, or coloured-wall recognition.',400);
+      if(body?.visionReview!==undefined && typeof body.visionReview!=='boolean')throw failure('Vision review must be true or false.',400);
       const result = await request('/analyze', { image: plan.image, width: plan.width, depth: plan.depth,
-        ...(body?.mode !== undefined?{mode}: {}),...(body?.profile!==undefined?{profile}: {}) }, signal);
+        ...(body?.mode !== undefined?{mode}: {}),...(body?.profile!==undefined?{profile}: {}),
+        ...(body?.visionReview!==undefined?{visionReview:body.visionReview}: {}) }, signal);
+      // Optional reviewer errors must never throw away valid structural recognition.
+      let visionReview;
+      if(body?.visionReview===true && result.visionReview!==undefined){
+        try{visionReview=G.validateVisionReview(result.visionReview);}
+        catch{visionReview=G.validateVisionReview({state:'unavailable',provider:'off',model:'',items:[]});}
+      }
       try {
         if (!['cubicasa5k','mitunet','color-walls'].includes(result.engine) || !Array.isArray(result.walls) || !Array.isArray(result.furniture)) throw new Error();
         const wallOnly=result.engine==='mitunet' && mode==='walls';
@@ -66,6 +75,7 @@ function createRecognizer({ baseUrl = process.env.FLOORPLAN_RECOGNITION_URL || '
           sources: {walls:result.engine==='color-walls'?'color-geometry':result.engine,
             openings:result.engine==='color-walls'?'color-gaps+cubicasa5k':'cubicasa5k',furniture:'cubicasa5k'},
           ...(result.engine==='mitunet'?{candidates:geometry.recognition.candidates,annotations:geometry.recognition.annotations,summary:geometry.recognition.summary}:{}),
+          ...(visionReview?{visionReview}:{}),
           warnings: ['Review detected geometry and confirm the drawing scale.', ...(wallOnly?['Uncertain walls are excluded from 3D until accepted.']:['Furniture and fixture suggestions need review before adding them.'])] };
       } catch { throw failure('Recognition returned geometry the editor cannot use. Try cropping to one floor.'); }
     }

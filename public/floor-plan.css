@@ -164,3 +164,5 @@
 .fp-wall-candidate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #e8dff2; }
 .fp-wall-candidate span { flex: 1 1 180px; font-size: 13px; }
 .fp-wall-candidate button { padding: 5px 8px; font-size: 12px; }
+.fp-vision-item { padding: 12px 0; border-top: 1px solid #e8dff2; }
+.fp-vision-crop { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }

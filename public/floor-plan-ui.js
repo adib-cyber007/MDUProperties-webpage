@@ -164,6 +164,7 @@
       <p class="fp-status" role="status" aria-live="polite"></p>
       <div class="fp-recognition-pipeline"><p>Upload drawing → Recognize walls, doors, windows and furniture → Review → Set building size → Export 3D</p><small data-recognition-status>Checking floor plan recognition…</small></div>
       <div class="field"><label for="fp-recognition-method">Recognition method</label><select id="fp-recognition-method"><option value="auto">Automatic — FLRplanner or solid coloured walls</option><option value="standard">FLRplanner — original recognition</option><option value="colored">Coloured walls — straight filled wall strips</option></select><small>Automatic keeps the original method unless it finds a strong network of solid coloured walls. Change the method, then detect again. Coloured-wall recognition currently supports horizontal and vertical wall strips.</small></div>
+      <label class="fp-snap"><input type="checkbox" data-vision-enabled disabled> Ask the local vision model to review suspicious walls</label><small class="fp-note" data-vision-status>Checking local vision review…</small>
       <section class="fp-designer" data-fp-designer hidden></section>
       <div class="fp-workspace" hidden>
         <section class="fp-building-size" aria-labelledby="fp-size-title"><h3 id="fp-size-title">Building size</h3><p class="fp-note">Set the building's outside width and depth, excluding drawing margins. New uploads start with a provisional 60 ft long side. Use actual dimensions or a printed measurement before publishing.</p>
@@ -192,6 +193,7 @@
             <p class="fp-trace-help">Blue lines are proposed walls, brown dashes are doors, and teal lines are windows. Check them against the drawing; select to edit or delete a mistake. Find doors &amp; windows adds candidates without replacing existing wall edits. Add missed walls or openings by tapping their endpoints. Openings should follow the wall centreline. Amber shapes are saved furniture.</p>
             <div data-room-review hidden><label class="fp-snap"><input type="checkbox" data-room-overlay checked> Show predicted rooms</label><p class="fp-note" data-room-summary></p><p class="fp-note">Room outlines are recognition suggestions. Review them against the drawing; manual wall edits do not update these outlines.</p></div>
             <div class="fp-wall-review" data-wall-review hidden><p class="fp-note" data-wall-summary></p><label class="fp-snap"><input type="checkbox" data-annotation-overlay> Show ignored measurements and text</label><label class="fp-snap"><input type="checkbox" data-candidate-overlay checked> Show uncertain walls</label><p class="fp-note">Purple dashed lines need review and stay out of the 3D model. Check each against the drawing before adding it.</p><div class="fp-wall-candidates" data-wall-candidates></div></div>
+            <div class="fp-wall-review" data-vision-review hidden><p class="fp-note" data-vision-summary></p><label class="fp-snap"><input type="checkbox" data-vision-overlay checked> Highlight walls flagged by vision review</label><p class="fp-note">Flagged walls remain in 3D until you remove them. Compare the crop and geometry with the drawing. Model judgments and scores have not been calibrated on your plans. Undo restores a removal.</p><div data-vision-items></div></div>
             <canvas class="fp-trace-canvas" tabindex="0" aria-label="Floor-plan tracing. Click two endpoints to add a segment. Use the coordinate fields below as a keyboard alternative."></canvas>
             <div class="fp-tools"><label class="fp-snap"><input type="checkbox" data-snap checked> Snap straight</label><button type="button" data-action="cancel">Cancel point</button><button type="button" data-action="undo">Undo</button><button type="button" data-action="delete">Delete selected</button></div>
             <details class="fp-coordinates"><summary>Add or edit a segment with coordinates</summary><p>Feet from the image’s top-left corner. Selecting a segment fills these values.</p><div class="fp-coordinate-grid">${['Start X', 'Start Y', 'End X', 'End Y'].map((label, i) => `<div class="field"><label for="fp-coord-${i}">${label} (ft)</label><input id="fp-coord-${i}" type="number" min="0" step=".01" value="0"></div>`).join('')}</div><div class="field"><label for="fp-kind">Segment type</label><select id="fp-kind"><option value="wall">Wall</option><option value="door">Doorway</option><option value="window">Window</option></select></div><div class="fp-tools"><button type="button" data-action="add">Add segment</button><button type="button" data-action="update">Update selected</button></div></details>
@@ -211,10 +213,14 @@
     const viewer = createViewer(root.querySelector('[data-fp-viewer]'), plan, '3D floor-plan preview', { editable: true, onSelectFurniture(index) { selectedFurniture = index; selected = -1; refresh(); } });
     const say = (message, error = false) => { status.textContent = message; status.classList.toggle('error-message', error); };
     const recognitionStatus = fetch('/api/admin/floor-plan-recognition', { signal: AbortSignal.timeout(3500) })
-      .then(async response => { if (!response.ok) return; const state = await response.json(); recognitionReady = state.ready === true; root.dataset.recognitionEngine=state.engine; })
+      .then(async response => { if (!response.ok) return; const state = await response.json(); recognitionReady = state.ready === true; root.dataset.recognitionEngine=state.engine;
+        root.dataset.visionConfigured=String(state.visionReview?.enabled===true);
+        root.querySelector('[data-vision-enabled]').disabled=state.visionReview?.enabled!==true;
+        root.querySelector('[data-vision-status]').textContent=state.visionReview?.enabled===true?'Local vision review is configured. Enable it, then detect walls again.':'Local vision review is not configured. Wall recognition is available independently.'; })
       .catch(() => {})
       .finally(() => {
         if (!root.isConnected) return;
+        if(root.dataset.visionConfigured===undefined)root.querySelector('[data-vision-status]').textContent='Local vision review is unavailable.';
         root.querySelector('[data-recognition-status]').textContent = recognitionReady
           ? `Pretrained recognition is ready. ${root.dataset.recognitionEngine==='mitunet'?'MitUNet walls are combined with FLRplanner door, window and furniture detection.':'FLRplanner detection is available for walls, doors, windows and furniture.'}`
           : 'Recognition service is unavailable. Start the floor plan service, then upload or choose Detect walls again. Your saved tracing stays available for manual editing.';
@@ -331,6 +337,7 @@
     }
     function syncControls() {
       root.querySelector('#fp-recognition-method').disabled = !!analysis || designing;
+      root.querySelector('[data-vision-enabled]').disabled = root.dataset.visionConfigured!=='true' || !!analysis || designing;
       workspace.hidden = !plan;
       workspace.querySelectorAll('input, select, button').forEach(control => { control.disabled = !plan; });
       root.querySelectorAll('.fp-dimensions input').forEach(input => { input.disabled = !plan; if (plan) input.value = plan[input.id.slice(3)]; });
@@ -358,6 +365,40 @@
           } catch(error){say(error.message,true);}
         };
         add.onclick=()=>finish(true);discard.onclick=()=>finish(false);row.append(label,add,discard);candidateList.append(row);
+      });
+      const vision=plan?.recognition?.visionReview;
+      root.querySelector('[data-vision-review]').hidden=!vision;
+      const flagged=(vision?.items||[]).filter(item=>item.classification!=='wall' && item.decision==='pending');
+      root.querySelector('[data-vision-summary]').textContent=vision?`${vision.reviewed} of ${vision.totalCandidates} suspicious regions reviewed · ${flagged.length} flags awaiting your review. ${vision.state==='unavailable'?'The local reviewer was unavailable; detected geometry is preserved.':vision.state==='disabled'?'Local vision review is disabled.':vision.state==='partial'?'Review was incomplete or reached its crop limit.':''}${vision.ocrState==='unavailable'?' OCR was unavailable.':''}`:'';
+      const visionList=root.querySelector('[data-vision-items]');visionList.replaceChildren();
+      (vision?.items||[]).forEach((item,index)=>{
+        if(item.classification==='wall' || item.decision!=='pending')return;
+        const row=document.createElement('div');row.className='fp-vision-item';
+        const description=document.createElement('p');description.className='fp-note';
+        const evidence=[item.evidence.connected?'joins another wall':'',item.evidence.thickSupport?'thick ink support':'',item.evidence.coloredSupport?'coloured ink support':''].filter(Boolean);
+        description.textContent=`${item.classification.replaceAll('-',' ')}: ${item.reason}${item.score===null?'':` · ${Math.round(item.score*100)}% model score (uncalibrated)`}${evidence.length?` · Geometry: ${evidence.join(', ')}.`:''}${item.ocrText?` · OCR: ${item.ocrText}`:''}`;
+        const crop=document.createElement('canvas');crop.className='fp-vision-crop';
+        if(image?.naturalWidth){
+          const [x0,y0,x1,y1]=item.cropBounds, sw=(x1-x0)*image.naturalWidth, sh=(y1-y0)*image.naturalHeight;
+          const scale=Math.min(1,240/sw,180/sh);crop.width=Math.max(1,Math.round(sw*scale));crop.height=Math.max(1,Math.round(sh*scale));
+          const context=crop.getContext('2d');context.drawImage(image,x0*image.naturalWidth,y0*image.naturalHeight,sw,sh,0,0,crop.width,crop.height);
+          context.strokeStyle='#dc2626';context.lineWidth=2;context.setLineDash([4,3]);context.beginPath();
+          context.moveTo((item.a[0]-x0)/(x1-x0)*crop.width,(item.a[1]-y0)/(y1-y0)*crop.height);
+          context.lineTo((item.b[0]-x0)/(x1-x0)*crop.width,(item.b[1]-y0)/(y1-y0)*crop.height);context.stroke();
+        }
+        const tools=document.createElement('div');tools.className='fp-tools';
+        const wallIndex=G.visionWallIndex(plan,item);
+        const inspect=document.createElement('button');inspect.type='button';inspect.textContent='Inspect wall';inspect.disabled=wallIndex<0;
+        inspect.onclick=()=>{selected=G.visionWallIndex(plan,item);refresh();};
+        const finish=decision=>{
+          try{const next=G.resolveVisionReview(plan,index,decision);pushHistory();plan=next;selected=-1;refresh();say(decision==='removed'?'Reviewed wall removed. Undo restores it.':'Reviewed wall kept.');}
+          catch(error){say(error.message,true);}
+        };
+        const keep=document.createElement('button');keep.type='button';keep.textContent='Keep wall';keep.disabled=wallIndex<0;keep.onclick=()=>finish('kept');
+        const remove=document.createElement('button');remove.type='button';remove.textContent='Remove wall';remove.disabled=wallIndex<0;remove.onclick=()=>finish('removed');
+        tools.append(inspect,keep,remove);row.append(crop,description,tools);
+        if(wallIndex<0){const note=document.createElement('p');note.className='fp-note';note.textContent='This wall was edited or removed. Detect again to review its current shape.';row.append(note);}
+        visionList.append(row);
       });
       const span = plan && G.wallSpan(plan);
       for (const key of ['width', 'depth']) { const input = root.querySelector(`#fp-building-${key}`); input.disabled = !span; input.value = span ? +span[key].toFixed(2) : ''; }
@@ -421,6 +462,9 @@
       });
       if(root.querySelector('[data-candidate-overlay]').checked)(plan.recognition?.candidates||[]).forEach(candidate=>line(candidate.a,candidate.b,'#9333ea',true));
       plan.walls.forEach((w, i) => { line(w.a, w.b, selected === i ? '#f97316' : { wall: '#285ee7', door: '#9d5a2b', window: '#008a96' }[w.kind], w.kind === 'door'); });
+      if(root.querySelector('[data-vision-overlay]').checked)(plan.recognition?.visionReview?.items||[]).forEach(item=>{
+        if(item.classification!=='wall' && item.decision==='pending' && G.visionWallIndex(plan,item)>=0)line(item.a,item.b,'#dc2626',true);
+      });
       const selectedWall=plan.walls[selected];
       if(selectedWall?.kind==='wall') {
         const dx=(selectedWall.b[0]-selectedWall.a[0])*width,dy=(selectedWall.b[1]-selectedWall.a[1])*height,len=Math.hypot(dx,dy),nx=-dy/len,ny=dx/len;
@@ -443,7 +487,7 @@
     function refresh() { syncControls(); draw(); viewer.update(plan); onChange?.(plan); }
     function loadImage() {
       const next = new Image(); image = next;
-      next.onload = () => { if (image === next) { draw(); if (autoOnLoad) {
+      next.onload = () => { if (image === next) { syncControls(); draw(); if (autoOnLoad) {
         const factor = 100 / Math.max(next.naturalWidth, next.naturalHeight);
         plan = G.resizeDrawing(plan, Math.max(4, next.naturalWidth * factor), Math.max(4, next.naturalHeight * factor));
         autoOnLoad = false; scanSavedOpenings = false; refresh(); setTimeout(() => detectWalls(false), 0); }
@@ -498,6 +542,7 @@
         fetch('/api/admin/floor-plan-recognition', { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ image: plan.image, width: plan.width, depth: plan.depth,
             profile: root.querySelector('#fp-recognition-method').value,
+            ...(mode==='all' && root.querySelector('[data-vision-enabled]').checked?{visionReview:true}:{}),
             ...(mode==='all' ? root.dataset.recognitionEngine==='mitunet' ? {mode:'combined'} : {} : {mode}) }), signal: controller.signal })
           .then(async response => {
             const body = await response.json(); if (settled) return;
@@ -537,6 +582,7 @@
         if (!proposed.some(segment => segment.kind === 'wall') && !result.candidates?.length) { suggestions=found; refresh(); return say('No clear wall lines were found. Add walls manually or upload a clearer drawing.', true); }
         let next = G.validate({ ...plan, published: false, walls: proposed, openingDetectionVersion: 4,
           recognition: { engine: result.engine, regions: result.rooms || [], inferenceMs: result.inferenceMs,
+            ...(result.visionReview?{visionReview:result.visionReview}:{}),
             ...(result.engine==='mitunet'?{candidates:result.candidates||[],annotations:result.annotations||[],summary:result.summary||{}}:{}) } });
         if (useLargeInitialScale && G.wallSpan(next)) next = G.largeLayout(next, 60, image.naturalWidth, image.naturalHeight);
         const scaledSuggestions = resizeSuggestions(found, plan, next);
@@ -747,6 +793,7 @@
     root.querySelector('[data-room-overlay]').onchange = draw;
     root.querySelector('[data-annotation-overlay]').onchange = draw;
     root.querySelector('[data-candidate-overlay]').onchange = draw;
+    root.querySelector('[data-vision-overlay]').onchange = draw;
     if (!hideDesigner && window.FloorPlanDesign) {
       const designRoot = root.querySelector('[data-fp-designer]'); designRoot.hidden = false;
       designer = window.FloorPlanDesign.createControls(designRoot, {

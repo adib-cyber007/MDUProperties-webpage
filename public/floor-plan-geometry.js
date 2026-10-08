@@ -36,6 +36,44 @@
     if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) invalid(`${label} must be between ${min} and ${max}.`);
     return value;
   }
+  function validateVisionReview(review) {
+    if (!review || !['complete','partial','unavailable','disabled'].includes(review.state) || !['off','ollama','laya-vision'].includes(review.provider) || !Array.isArray(review.items) || review.items.length > 6) invalid('Vision review must contain a supported state, provider and at most six regions.');
+    const text = (value, max) => typeof value === 'string' ? value.slice(0, max) : '';
+    const point = value => {
+      if (!Array.isArray(value) || value.length !== 2) invalid('Vision review endpoints need two coordinates.');
+      return value.map(v => number(v, 0, 1, 'Vision coordinate'));
+    };
+    if (review.mode !== undefined && review.mode !== 'review-only') invalid('Vision review cannot change walls automatically.');
+    if ((review.automaticRemovals ?? 0) !== 0) invalid('Automatic vision removal is disabled.');
+    return {state:review.state,provider:review.provider,model:text(review.model,100),mode:'review-only',automaticRemovals:0,
+      reviewed:number(review.reviewed??review.items.length,0,6,'Reviewed crop count'),
+      totalCandidates:number(review.totalCandidates??review.items.length,0,MAX_SEGMENTS,'Vision candidate count'),
+      elapsedMs:number(review.elapsedMs??0,0,Number.MAX_SAFE_INTEGER,'Vision review time'),
+      ocrState:['off','existing','complete','unavailable'].includes(review.ocrState)?review.ocrState:'off',
+      items:review.items.map(item=>{
+        if(!item || !['wall','measurement-line','description-box','furniture','uncertain'].includes(item.classification) || !Array.isArray(item.cropBounds) || item.cropBounds.length!==4) invalid('Vision regions need a classification and crop bounds.');
+        const bounds=item.cropBounds.map(v=>number(v,0,1,'Crop bound'));
+        if(bounds[0]>=bounds[2] || bounds[1]>=bounds[3])invalid('Vision crop bounds must describe a rectangle.');
+        if(item.decision!==undefined && !['pending','kept','removed'].includes(item.decision))invalid('Vision review decision is invalid.');
+        return {a:point(item.a),b:point(item.b),cropBounds:bounds,classification:item.classification,
+          score:item.score==null?null:number(item.score,0,1,'Vision model score'),reason:text(item.reason,160),
+          selectionReason:text(item.selectionReason,160),ocrText:text(item.ocrText,400),decision:item.decision??'pending',
+          evidence:{connected:item.evidence?.connected===true,thickSupport:item.evidence?.thickSupport===true,coloredSupport:item.evidence?.coloredSupport===true}};
+      })};
+  }
+  function visionWallIndex(plan, item) {
+    const same = (a,b) => a.every((v,i)=>Math.abs(v-b[i])<.000001);
+    return plan.walls.findIndex(w=>w.kind==='wall' && (same(w.a,item.a)&&same(w.b,item.b) || same(w.a,item.b)&&same(w.b,item.a)));
+  }
+  function resolveVisionReview(plan, index, decision) {
+    if(!['kept','removed'].includes(decision))invalid('Keep or remove a reviewed wall.');
+    const review=plan.recognition?.visionReview, item=review?.items[index];
+    if(!item || item.decision!=='pending')invalid('This region has already been reviewed.');
+    const wallIndex=visionWallIndex(plan,item);
+    if(wallIndex<0)invalid('This wall was edited or removed. Detect again to review its current shape.');
+    return validate({...plan,published:false,walls:plan.walls.filter((_,i)=>decision!=='removed'||i!==wallIndex),
+      recognition:{...plan.recognition,visionReview:{...review,items:review.items.map((r,i)=>i===index?{...r,decision}:r)}}});
+  }
   function validate(input) {
     if (input == null) return null;
     if (input.version === 2) return validateBuilding(input);
@@ -135,6 +173,7 @@
         plan.recognition.summary = {};
         for (const key of ['textRegions','dimensionLines','symbolRegions','removedPixels','reviewSegments']) plan.recognition.summary[key]=number(recognition.summary?.[key]??0,0,Number.MAX_SAFE_INTEGER,'Recognition count');
       }
+      if (recognition.visionReview !== undefined) plan.recognition.visionReview = validateVisionReview(recognition.visionReview);
     }
     const textures = [plan.image, ...Object.values(plan.finishes || {}).map(f => f.texture || ''), ...plan.walls.flatMap(w => [w.finish?.texture || '', w.exteriorFinish?.texture || ''])];
     if (textures.reduce((sum, image) => sum + image.length, 0) > 5000000) invalid('This floor has too many texture images. Use smaller textures (5 MB combined maximum).');
@@ -436,5 +475,5 @@
     });
     return lines.join('\n') + '\n';
   }
-  return { validate, validateFinish, FINISH_PATTERNS, calibrate, resizeDrawing, resizeBuilding, largeLayout, wallSpan, recognitionFurniture, surroundOpenings, cutWalls, wallSurfaces, boxes, vertices, faces, toOBJ, floorsOf, hasGeometry, coverImage, footprint, floorName, MAX_FLOORS, FURNITURE, MAX_SEGMENTS, MAX_FURNITURE };
+  return { validate, validateVisionReview, visionWallIndex, resolveVisionReview, validateFinish, FINISH_PATTERNS, calibrate, resizeDrawing, resizeBuilding, largeLayout, wallSpan, recognitionFurniture, surroundOpenings, cutWalls, wallSurfaces, boxes, vertices, faces, toOBJ, floorsOf, hasGeometry, coverImage, footprint, floorName, MAX_FLOORS, FURNITURE, MAX_SEGMENTS, MAX_FURNITURE };
 });

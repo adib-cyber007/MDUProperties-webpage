@@ -10,6 +10,7 @@
     "start:floorplan": "node scripts/start-floorplan.js",
     "test:floorplan:browser": "node scripts/verify-floorplan-browser.js",
     "test:floorplan:colored": "node scripts/verify-colored-floorplan-browser.js",
+    "test:floorplan:vision": "node scripts/verify-vision-review-browser.js",
     "test:walkthrough:browser": "npm run build && node scripts/verify-walkthrough-browser.js",
     "evaluate:floorplan": "node scripts/evaluate-floorplan.js",
     "check": "node --check src/floor-plan-walkthrough.cjs && node --check scripts/verify-walkthrough-browser.js && node --check server.js && node --check floor-plan-ai.js && node --check floor-plan-recognition.js && node --check telegram-bot.js && node --check public/app.js && node --check public/model-projects.js && node --check public/floor-plan-ui.js && node --check public/floor-plan-finishes.js && node --check public/floor-plan-design.js && node --check public/building-ui.js && node --check public/floor-plan-detection.js && node --check public/floor-plan-openings.js && node --check public/floor-plan-furniture.js && node --check public/floor-plan-worker.js && node --check public/floor-plan-geometry.js && node --check scripts/start-floorplan.js && node --check scripts/verify-floorplan-browser.js && node --check scripts/evaluate-floorplan.js && node --check scripts/configure-telegram-webhook.js && node --check scripts/get-telegram-chat-id.js && node scripts/build-3d.js",

@@ -29,6 +29,13 @@ colour checks fail, the exact original inference call is retained. The editor's
 The MitUNet/OCR combined engine remains an explicit optional comparison. It is
 not used by the default engine and does not filter or replace its wall geometry.
 
+Optional local vision review adds contextual crop judgments alongside either
+wall pipeline. Qwen3-VL through loopback Ollama and offline Laya Vision in a
+separate Python environment are supported. Review is off by default and needs
+the editor checkbox; it never automatically rejects a wall. Flags support
+inspect, keep, remove, undo and save/reopen. See
+[model research, setup and labeled evaluation](../../FLOOR-PLAN-VISION-REVIEW.md).
+
 ## Local setup
 
 Dependencies and verified weights are generated local files. A fresh clone must
@@ -105,7 +112,11 @@ The editor preserves crisp PNG where possible.
 ## API and online hosting
 
 GET /health reports readiness, engine, device, and license. POST /analyze accepts
-`{image,width,depth,mode,profile}` (feet). Profile is `auto` by default,
+`{image,width,depth,mode,profile,visionReview}` (feet). `visionReview` is an
+optional boolean, false by default, used in combined/wall detection. Health
+reports review configuration separately from extraction readiness. Review
+results include separate bounded metadata; extraction arrays stay unchanged.
+Profile is `auto` by default,
 `standard` to force original FLRplanner output, or `colored` for the separate
 solid-colour method. Explicit coloured mode fails when its evidence is absent.
 CubiCasa returns the original full semantic

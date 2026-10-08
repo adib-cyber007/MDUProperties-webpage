@@ -4,6 +4,12 @@ data/
 .vercel/
 work/
 test/
-# Recognition is an optional, separately hosted HTTP service. The public
-# walkthrough is bundled JavaScript and needs none of these local model files.
-services/
+# The recognition container builds from source and downloads verified weights.
+# Local environments, checkpoints and test assets never enter the deployment.
+services/floorplan/.venv/
+services/floorplan/models/
+services/floorplan/__pycache__/
+services/floorplan/test_*.py
+node_modules/
+.env*
+!.env.example

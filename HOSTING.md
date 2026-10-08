@@ -4,7 +4,7 @@ The website and FLRplanner-derived walkthrough are self-contained in this projec
 
 ## Vercel
 
-Import this repository into Vercel, with the repository root as the project directory. The checked-in `vercel.json` selects the Node framework, installs with `npm ci`, builds with `npm run build` and includes the public assets in the server function. Use Node.js 24. Leave Output Directory unset: this project has a Node backend and API routes.
+Import this repository into Vercel, with the repository root as the project directory. The checked-in `vercel.json` defines the Node website and a private CPU recognition container using Vercel Services (beta). The website installs with `npm ci`, builds with `npm run build` and includes the public assets in its server function. Use Node.js 24. Leave Output Directory unset.
 
 Configure these encrypted server environment variables before using the owner dashboard:
 
@@ -13,12 +13,15 @@ Configure these encrypted server environment variables before using the owner da
 | `ADMIN_PASSWORD` | Your production owner password |
 | `SUPABASE_URL` | The existing project's durable listing/model store |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only access to that store |
+| `FLOORPLAN_SERVICE_TOKEN` | Private website-to-recognizer authentication; use separate production and preview values |
 
 The existing `public.site_store` table must be provisioned using `supabase/migrations/20260813000000_create_site_store.sql`. Saved property, portfolio and standalone 3D models share this store. Public pages can display the demonstration inventory without storage credentials; production management requires the durable store. Keep credentials in the hosting settings, outside browser code and source control.
 
 `server.js` exposes a default Node.js request handler for the [Vercel runtime](https://vercel.com/docs/functions/runtimes/node-js). Importing it does not open a port; `npm start` still starts the conventional local server. The same entrypoint handles public routes, the dashboard, property APIs and the existing Telegram webhook. The public viewer uses same-origin assets and API requests. Deployment excludes local data, test output and Python model files.
 
-The existing Telegram and AI-design features remain optional; their environment variables are listed in `.env.example`. Floor-plan recognition is also optional and separate from viewing a saved model. To enable automatic recognition for uploads, host the recognition service separately and set `FLOORPLAN_RECOGNITION_URL` to its reachable HTTPS URL, with a matching `FLOORPLAN_SERVICE_TOKEN`. Leave this URL empty when that service is unavailable. Reviewed layout JSON can be imported without recognition.
+The website's service binding injects `FLOORPLAN_RECOGNITION_URL` at runtime. Do not set that variable manually for this Vercel Services deployment. All public routes go to the website; the recognition container has no public rewrite. Owner authentication and the private service token protect uploads. Preview calls its own recognition container, and production calls its own. The container installs pinned CPU dependencies and downloads the hash-verified CubiCasa checkpoint during its build; local checkpoints and virtual environments are excluded. Cold startup may take longer than a warm request, so recognition health checks allow 20 seconds.
+
+The existing Telegram and AI-design features remain optional; their environment variables are listed in `.env.example`. Saved-model viewing and walkthroughs need no recognition service. For other hosts, the separate service setup remains supported: set `FLOORPLAN_RECOGNITION_URL` to its HTTPS URL with the matching token. Reviewed layout JSON can be imported without recognition.
 
 The default recognizer is the restored FLRplanner-derived CubiCasa5K pipeline
 for walls, doors, windows, room predictions and fixed fixtures. It requires only
@@ -31,7 +34,7 @@ instructions are in [services/floorplan/README.md](services/floorplan/README.md)
 Published CubiCasa and MitUNet weights are CC-BY-NC 4.0: commercial inference
 hosting requires appropriate permission or separately trained, appropriately
 licensed weights.
-The container recipe has not been built locally because Docker is unavailable.
+Local Docker verification requires Docker, which is unavailable on this computer. Verify the hosted container build, model readiness and an owner upload before promoting a deployment.
 
 ## Other Node.js hosts
 

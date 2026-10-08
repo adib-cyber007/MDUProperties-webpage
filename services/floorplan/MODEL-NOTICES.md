@@ -6,8 +6,9 @@ fixed fixture suggestions. The existing CC-BY-NC 4.0 restriction remains; see
 [vendor/NOTICE.md](vendor/NOTICE.md). The browser separately proposes movable
 furniture using this project's image rules.
 
-MitUNet and OCR are used only when the optional comparison engine is explicitly
-selected with `FLOORPLAN_ENGINE=mitunet`; they are not loaded by default.
+MitUNet is used only when the optional comparison engine is explicitly selected
+with `FLOORPLAN_ENGINE=mitunet`. OCR can also be explicitly enabled for local
+vision review with `FLOORPLAN_VISION_OCR=1`; neither is loaded by default.
 
 MitUNet architecture/inference is adapted from the official implementation by
 Dmitriy Parashchuk, Alexey Kapshitskiy, and Yuriy Karyakin:
@@ -37,3 +38,24 @@ The optional combined engine uses MitUNet structural walls and CubiCasa5K
 openings/fixtures. Both checkpoints retain their respective non-commercial
 restrictions. Selecting the default CubiCasa5K engine restores its own structural
 walls as well as its openings and fixture predictions.
+
+## Optional local vision review
+
+[Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct)
+is Apache 2.0; the recommended local adapter uses Ollama's `qwen3-vl:4b` package.
+Install its weights explicitly on the recognition host and retain the package's
+license and model digest. This reviewer does not change the existing CubiCasa
+checkpoint's noncommercial restriction.
+
+[Laya Vision](https://huggingface.co/thaitea/laya-vision) published weights are
+**CC BY-NC-SA 4.0**, including a noncommercial and share-alike restriction.
+Its independent [vision fork](https://github.com/r33drichards/laya-vision) code
+is Apache 2.0. The adapter loads an explicitly selected local checkpoint in an
+isolated environment with Hugging Face/Transformers offline mode enabled.
+Commercial use of these published weights requires appropriate permission.
+Pin code/checkpoint revisions and preserve model checksums for evaluations.
+
+Text-only [Laya](https://github.com/NandhaKishorM/laya) is a different package
+and cannot judge pixels; it is not a dependency of this integration.
+Neither vision model is downloaded by recognition or installed by default.
+See [the integration research and limits](../../FLOOR-PLAN-VISION-REVIEW.md).
