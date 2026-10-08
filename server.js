@@ -24,6 +24,11 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 const SESSION_TTL = 12 * 60 * 60 * 1000;
+// Hosted requests can reach different instances. Authenticate the cookie itself
+// instead of requiring the instance that originally handled the owner login.
+const SESSION_KEY = PRODUCTION && ADMIN_PASSWORD
+  ? crypto.createHmac('sha256', process.env.ADMIN_SESSION_SECRET || ADMIN_PASSWORD).update('aaranya-owner-session-v1\0').update(ADMIN_PASSWORD).digest()
+  : null;
 const sessions = new Map();
 const loginAttempts = new Map();
 const designRequests = new WeakMap();
@@ -358,9 +363,20 @@ function cookies(req) {
 
 function getSession(req) {
   const token = cookies(req).aaranya_session;
-  const session = token && sessions.get(token);
-  if (!session || session.expires < Date.now()) {
-    if (token) sessions.delete(token);
+  let session = token && sessions.get(token);
+  if (!session && SESSION_KEY && typeof token === 'string' && token.length < 256) {
+    const parts = token.split('.');
+    if (parts.length === 4 && parts[0] === 'v1' && /^\d{13}$/.test(parts[1]) && /^[A-Za-z0-9_-]{43}$/.test(parts[2]) && /^[A-Za-z0-9_-]{43}$/.test(parts[3])) {
+      const issued = Number(parts[1]);
+      const signature = crypto.createHmac('sha256', SESSION_KEY).update(parts.slice(0, 3).join('.')).digest('base64url');
+      if (issued <= Date.now() && issued + SESSION_TTL > Date.now() && secretMatches(parts[3], signature)) {
+        session = { expires: issued + SESSION_TTL };
+        sessions.set(token, session);
+      }
+    }
+  }
+  if (!session || session.revoked || session.expires <= Date.now()) {
+    if (token && (!session || session.expires <= Date.now())) sessions.delete(token);
     return null;
   }
   return session;
@@ -762,15 +778,20 @@ async function handleApi(req, res, url) {
       return sendJson(res, 401, { error: 'That password is not correct.' });
     }
     loginAttempts.delete(key);
-    const token = crypto.randomBytes(32).toString('base64url');
-    sessions.set(token, { expires: Date.now() + SESSION_TTL });
-    const secure = req.socket.encrypted ? '; Secure' : '';
+    const issued = Date.now(), nonce = crypto.randomBytes(32).toString('base64url');
+    const payload = `v1.${issued}.${nonce}`;
+    const token = SESSION_KEY ? `${payload}.${crypto.createHmac('sha256', SESSION_KEY).update(payload).digest('base64url')}` : nonce;
+    sessions.set(token, { expires: issued + SESSION_TTL });
+    const secure = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
     return sendJson(res, 200, { authenticated: true }, { 'Set-Cookie': `aaranya_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL / 1000}${secure}` });
   }
   if (req.method === 'POST' && url.pathname === '/api/logout') {
     const token = cookies(req).aaranya_session;
-    if (token) sessions.delete(token);
-    return sendJson(res, 200, { authenticated: false }, { 'Set-Cookie': 'aaranya_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
+    const session = getSession(req);
+    if (session) session.revoked = true;
+    if (token && !SESSION_KEY) sessions.delete(token);
+    const secure = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    return sendJson(res, 200, { authenticated: false }, { 'Set-Cookie': `aaranya_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}` });
   }
   if (req.method === 'GET' && url.pathname === '/api/admin/data') {
     if (!requireAuth(req, res)) return;

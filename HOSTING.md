@@ -11,6 +11,7 @@ Configure these encrypted server environment variables before using the owner da
 | Variable | Purpose |
 | --- | --- |
 | `ADMIN_PASSWORD` | Your production owner password |
+| `ADMIN_SESSION_SECRET` | Random private cookie-signing key; use separate production and preview values |
 | `SUPABASE_URL` | The existing project's durable listing/model store |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only access to that store |
 | `FLOORPLAN_SERVICE_TOKEN` | Private website-to-recognizer authentication; use separate production and preview values |
@@ -18,6 +19,8 @@ Configure these encrypted server environment variables before using the owner da
 The existing `public.site_store` table must be provisioned using `supabase/migrations/20260813000000_create_site_store.sql`. Saved property, portfolio and standalone 3D models share this store. Public pages can display the demonstration inventory without storage credentials; production management requires the durable store. Keep credentials in the hosting settings, outside browser code and source control.
 
 `server.js` exposes a default Node.js request handler for the [Vercel runtime](https://vercel.com/docs/functions/runtimes/node-js). Importing it does not open a port; `npm start` still starts the conventional local server. The same entrypoint handles public routes, the dashboard, property APIs and the existing Telegram webhook. The public viewer uses same-origin assets and API requests. Deployment excludes local data, test output and Python model files.
+
+Production owner cookies are HMAC-signed using `ADMIN_SESSION_SECRET` and bound to `ADMIN_PASSWORD`, so an authenticated request remains valid across server instances and cold starts. Set a random signing secret with at least 32 bytes of entropy; the password-only fallback is for hosts that have not configured one. Cookies expire after 12 hours and use HttpOnly, SameSite=Strict and Secure over HTTPS. Sign-out clears the browser cookie; changing either secret and redeploying invalidates all previously issued cookies. Immediate revocation of a copied cookie across every instance would require a shared session store. Local development retains its in-memory sessions.
 
 The website's service binding injects `FLOORPLAN_RECOGNITION_URL` at runtime. Do not set that variable manually for this Vercel Services deployment. All public routes go to the website; the recognition container has no public rewrite. Owner authentication and the private service token protect uploads. Preview calls its own recognition container, and production calls its own. The container installs pinned CPU dependencies and downloads the hash-verified CubiCasa checkpoint during its build; local checkpoints and virtual environments are excluded. Cold startup may take longer than a warm request, so recognition health checks allow 20 seconds.
 
