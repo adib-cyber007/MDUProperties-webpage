@@ -118,6 +118,23 @@
 .fp-paint-field button { justify-self: start; min-height: 44px; }
 .fp-paint :focus-visible { outline: 3px solid var(--bronze); outline-offset: 3px; }
 .fp-material-options { border-top: 1px solid var(--line); }
+.fp-tiles { border-top: 1px solid var(--line); padding: 24px 0; }
+.fp-tile-styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.fp-tile-style { display: grid; gap: 8px; min-width: 0; padding: 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; text-align: left; color: var(--ink); font: 500 .78rem var(--sans); cursor: pointer; }
+.fp-tile-style canvas { width: 100%; height: auto; aspect-ratio: 1.4; object-fit: cover; border: 1px solid #0001; }
+.fp-tile-style[aria-pressed="true"] { border-color: var(--bronze); box-shadow: 0 0 0 1px var(--bronze); background: #8560390a; }
+.fp-tile-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.fp-tile-setting { display: grid; gap: 8px; min-width: 0; }
+.fp-tile-settings label { font-size: .85rem; font-weight: 600; }
+.fp-tile-settings input, .fp-tile-settings select { width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); }
+.fp-tile-settings input[type="color"] { padding: 4px; cursor: pointer; }
+.fp-tile-settings input[aria-invalid="true"] { border-color: #ad4d37; }
+.fp-tile-preview { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 18px; }
+.fp-tile-preview canvas { display: block; width: 64px; height: 64px; border: 1px solid var(--line); }
+.fp-tile-preview p { flex: 1; min-width: 120px; margin: 0; font-size: .85rem; }
+.fp-tile-preview button { min-height: 44px; }
+.fp-tiles :focus-visible { outline: 3px solid var(--bronze); outline-offset: 3px; }
+@media (max-width: 640px) { .fp-tile-styles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fp-tile-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fp-tile-setting:last-child { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .fp-paint-fields { grid-template-columns: 1fr; gap: 28px; } }
 .fp-finish-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 22px; }
 .fp-finish-upload .field { flex: 1; min-width: 220px; }

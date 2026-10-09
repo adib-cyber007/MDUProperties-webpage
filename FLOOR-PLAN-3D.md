@@ -67,6 +67,12 @@ Paint applies to all corresponding wall faces on the selected floor, replacing i
 
 The bundled catalogue contains 2,200 shade names, codes and digital swatches from [Asian Paints’ official DecorPro catalogue](https://www.asianpaints.com/decorpro/shades/colour-catalogues.html), retrieved on 9 October 2026. Screen colours are a preview; use a physical shade card for the final paint. This workflow needs no AI account or external request while choosing shades. The former style assistant and generation endpoint have been removed.
 
+## Floor tiles
+
+In **Floor plan & 3D → Finishes → Floor tiles**, choose a sample: warm or white porcelain, graphite, sage, blue, black and cream checker, white marble or ivory terrazzo. Set the square tile edge in feet (2 means 2 × 2 ft), grout colour and straight, diagonal or quarter-turn orientation. **Apply floor tiles** updates the selected floor in the floor and combined-building previews. Selecting samples and changing settings previews the choice before applying it.
+
+Save the project to keep the tile style, size, grout and orientation. Reopening restores these controls; Undo restores the previous flooring. Layout JSON preserves the settings and detailed GLB includes the tile texture, grout and real-size repeats. Each floor is independent. Existing wood, uploaded flooring and other saved finishes remain until tiles are applied. The same controls appear in listing, portfolio, standalone and upcoming-project editors. Samples are illustrative generic materials. **Flooring, ceiling & custom finishes** still supports uploaded flooring images and other materials.
+
 ## Multi-floor buildings for current and previous projects
 
 ### Upcoming projects

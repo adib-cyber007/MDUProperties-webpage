@@ -14,7 +14,7 @@
   function loadRenderer() {
     if (window.FloorPlanRenderer) return Promise.resolve();
     if (!rendererPromise) rendererPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=15';
+      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=16';
       script.onload = resolve;
       script.onerror = () => { script.remove(); rendererPromise = null; reject(new Error('The 3D viewer could not load. Check your connection and choose Retry.')); };
       document.head.append(script);
@@ -166,7 +166,7 @@
     let plan = initial ? G.validate(initial) : null;
     let pending = null, cursor = null, selected = -1, selectedFurniture = -1, tool = 'wall', history = [], uploading = false, image = null, suggestions = [];
     let uploadVersion = 0, autoOnLoad = false, editRevision = 0, analysis = null, useLargeInitialScale = false;
-    let paintControls = null;
+    let paintControls = null, tileControls = null;
     let recognitionReady = false;
     let scanSavedOpenings = !!initial && (initial.openingDetectionVersion || 0) < 4;
     root.innerHTML = `<div class="form-section"><h2>Floor plan to 3D</h2><p>Upload a clear floor-plan drawing to generate a first 3D layout automatically. Review the detected walls, dimensions and openings before publishing.</p></div>
@@ -186,7 +186,7 @@
           <div class="field"><label for="fp-height">Wall height (ft)</label><input id="fp-height" type="number" min="7" max="25" step=".1" required></div>
           <div class="field"><label for="fp-thickness">Wall thickness (ft)</label><input id="fp-thickness" type="number" min=".2" max="2" step=".01" required></div>
         </div>
-        <section class="fp-finishes" aria-label="Paint and surface finishes"><div data-fp-paint></div><details class="workspace-disclosure fp-material-options"><summary>Flooring, ceiling &amp; custom finishes</summary><div class="fp-finish-heading"><div><h3 id="fp-finishes-title">Surface materials</h3><p class="fp-note">Choose a finish, mix your own colors, or upload a wallpaper or flooring sample. Select a wall on the drawing to give it its own finish.</p></div><span class="fp-library-count">${F.COLORS.length} colors / ${Object.values(F.PRESETS).flat().length} finishes</span></div>
+        <section class="fp-finishes" aria-label="Paint and surface finishes"><div data-fp-paint></div><div data-fp-tiles></div><details class="workspace-disclosure fp-material-options"><summary>Flooring, ceiling &amp; custom finishes</summary><div class="fp-finish-heading"><div><h3 id="fp-finishes-title">Surface materials</h3><p class="fp-note">Choose a finish, mix your own colors, or upload a wallpaper or flooring sample. Select a wall on the drawing to give it its own finish.</p></div><span class="fp-library-count">${F.COLORS.length} colors / ${Object.values(F.PRESETS).flat().length} finishes</span></div>
           <div class="fp-wall-sides"><div class="field"><label for="fp-wall-outside">Selected wall: inside / outside</label><select id="fp-wall-outside"><option value="auto">Automatic from layout</option><option value="none">Interior partition (both faces inside)</option><option value="left">Exterior: outside on marked Side 1</option><option value="right">Exterior: outside on opposite Side 2</option><option value="both">Both faces outdoors</option></select></div><p class="fp-note" data-wall-sides-note></p></div>
           <div class="fp-finish-fields"><div class="field"><label for="fp-finish-target">Apply finish to</label><select id="fp-finish-target"><option value="wall">Inside wall faces on this floor</option><option value="exterior">Outside wall faces on this floor</option><option value="selected-wall">Selected wall: inside face(s)</option><option value="selected-exterior">Selected wall: outside face(s)</option><option value="floor">Flooring on this floor</option><option value="ceiling">Ceiling on this floor</option></select></div><div class="field"><label for="fp-finish-color">Base color or image tint</label><div class="fp-color-input"><input id="fp-finish-color" type="color" aria-label="Choose any surface color"><input id="fp-finish-hex" type="text" maxlength="7" spellcheck="false" placeholder="#EEE8DE" aria-label="Custom surface hex color"></div></div><div class="field"><label for="fp-finish-accent">Pattern / grout color</label><input id="fp-finish-accent" type="color"></div><div class="field"><label for="fp-finish-scale">Sample repeat size (ft)</label><input id="fp-finish-scale" type="number" min=".25" max="20" step=".25"></div><div class="field"><label for="fp-finish-rotation">Pattern direction (degrees)</label><input id="fp-finish-rotation" type="number" min="-180" max="180" step="15"></div></div>
           <p class="fp-note" data-finish-description></p><div class="fp-color-palette" role="group" aria-label="Surface color library"></div>
@@ -307,7 +307,7 @@
     function applyFinish(value) {
       if (!canFinish()) return say('Select a wall on the drawing or in Saved segments first.', true);
       try {
-        const {paint, ...material}=value;
+        const {paint, tile, ...material}=value;
         const finish=G.validateFinish(material),target=finishTarget.value,property=finishKey(target)==='exterior'?'exteriorFinish':'finish';
         const stored=individualTarget(target)?plan.walls[selected][property]:plan.finishes?.[target];
         if (stored && JSON.stringify(stored) === JSON.stringify(finish)) { syncFinishControls(); return; }
@@ -340,7 +340,7 @@
       }
       library.querySelectorAll('button').forEach(button => { button.disabled = !enabled; button.setAttribute('aria-pressed',String(button.dataset.pattern === finish.pattern && button.dataset.color === finish.color)); });
       root.querySelectorAll('.fp-color-palette button').forEach(button => { button.disabled = !enabled; button.setAttribute('aria-pressed',String(button.dataset.color === finish.color)); });
-      paintControls?.sync();
+      paintControls?.sync(); tileControls?.sync();
     }
     F.COLORS.forEach(({name,color}) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'fp-color-swatch'; button.style.backgroundColor = color; button.dataset.color = color; button.title = `${name} ${color}`; button.setAttribute('aria-label',`${name} ${color}`); button.onclick = () => applyFinish({...currentFinish(),color}); root.querySelector('.fp-color-palette').append(button);
@@ -852,6 +852,12 @@
     root.querySelector('[data-candidate-overlay]').onchange = draw;
     root.querySelector('[data-vision-overlay]').onchange = draw;
     paintControls = window.FloorPlanPaint.createControls(root.querySelector('[data-fp-paint]'), {
+      getPlan: () => plan,
+      applyPlan(next) { pushHistory(); plan = next; refresh(); },
+      isReady: () => !!plan && !uploading && !autoOnLoad && !analysis && !finishUploading,
+      onStatus: say
+    });
+    tileControls = window.FloorPlanTiles.createControls(root.querySelector('[data-fp-tiles]'), {
       getPlan: () => plan,
       applyPlan(next) { pushHistory(); plan = next; refresh(); },
       isReady: () => !!plan && !uploading && !autoOnLoad && !analysis && !finishUploading,

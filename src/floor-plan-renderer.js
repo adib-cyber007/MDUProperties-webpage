@@ -96,7 +96,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     const mat=material(key, finish.pattern === 'solid' || finish.pattern === 'custom' ? finish.color : '#ffffff', {
       map, roughness: ['marble', 'tiles'].includes(finish.pattern) ? .42 : .88, side: THREE.DoubleSide
     });
-    mat.name=finish.paint?`${finish.paint.brand} ${finish.paint.name} (${finish.paint.code})`:`${finish.pattern} ${finish.color}`;return mat;
+    mat.name=finish.paint?`${finish.paint.brand} ${finish.paint.name} (${finish.paint.code})`:finish.tile?`${finish.tile.name} tiles (${finish.scale/2} x ${finish.scale/2} ft)`:`${finish.pattern} ${finish.color}`;return mat;
   }
   function surfaceGeometry(width, depth) {
     const geometry = new THREE.PlaneGeometry(width * FT, depth * FT), uv = geometry.attributes.uv;

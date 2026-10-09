@@ -105,7 +105,7 @@
           if(finish.pattern==='herringbone')line(x+32,y+32,x+16,y+48);
         }break;
       case 'tiles':case 'checker':
-        for(let y=0;y<256;y+=128)for(let x=0;x<256;x+=128){if(finish.pattern==='checker'&&(x+y)%256===0)ctx.fillRect(x,y,128,128);ctx.strokeRect(x+.8,y+.8,127,127);}break;
+        for(let y=0;y<256;y+=128)for(let x=0;x<256;x+=128){if(finish.pattern==='checker'&&(x+y)%256===0)ctx.fillRect(x,y,128,128);if(!finish.tile)ctx.strokeRect(x+.8,y+.8,127,127);}break;
       case 'marble':
         ctx.globalAlpha=.45;ctx.lineWidth=1.4;
         for(let i=0;i<8;i++){let y=random()*256;ctx.beginPath();ctx.moveTo(0,y);for(let x=16;x<=256;x+=16){y+=(random()-.5)*32;ctx.lineTo(x,y);}ctx.stroke();}
@@ -118,7 +118,12 @@
       case 'panels':case 'coffer':
         for(let y=0;y<256;y+=128)for(let x=0;x<256;x+=128){ctx.lineWidth=5;ctx.strokeRect(x+4,y+4,120,120);ctx.globalAlpha=.45;ctx.lineWidth=1;ctx.strokeRect(x+13,y+13,102,102);ctx.globalAlpha=1;}break;
     }
-    ctx.globalAlpha=1;return surface;
+    ctx.globalAlpha=1;
+    if(finish.tile) {
+      ctx.strokeStyle=finish.tile.grout;ctx.lineWidth=2;
+      for(let n=0;n<=256;n+=128){line(n,0,n,256);line(0,n,256,n);}
+    }
+    return surface;
   }
   return { DEFAULTS, PRESETS, COLORS, canvas };
 });

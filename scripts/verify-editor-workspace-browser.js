@@ -86,6 +86,30 @@ async function run() {
     assert.equal(await page.getByRole('button', { name: 'Apply exterior paint', exact: true }).isEnabled(), false);
     assert.equal(await page.locator('.fp-editor').count(), 1, 'Enter on an unknown shade does not submit the project form');
     await exteriorPaint().fill('Apricot-N (0501)');
+    const tileApply = () => page.getByRole('button', { name: 'Apply floor tiles', exact: true });
+    assert.equal(await tileApply().isDisabled(), true, 'existing flooring is kept until a tile style is chosen');
+    await page.getByRole('button', { name: 'White marble floor tiles', exact: true }).click();
+    await page.getByLabel('Tile size (ft)', { exact: true }).fill('0');
+    assert.equal(await tileApply().isDisabled(), true, 'invalid sizes do not apply tiles');
+    await page.getByLabel('Tile size (ft)', { exact: true }).fill('2');
+    await page.getByLabel('Grout colour', { exact: true }).fill('#665544');
+    await page.getByLabel('Tile orientation', { exact: true }).selectOption('45');
+    await tileApply().click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.match(await page.locator('[data-tile-current]').innerText(), /wood finish/);
+    assert.equal(await interiorPaint().inputValue(), 'Buttercup-N (0336)');
+    await page.getByRole('button', { name: 'White marble floor tiles', exact: true }).click();
+    await page.getByLabel('Grout colour', { exact: true }).fill('#665544');
+    await page.getByLabel('Tile orientation', { exact: true }).selectOption('45');
+    await tileApply().click();
+    const pixels = await page.evaluate(() => {
+      const finish = window.FloorPlanTiles.createFinish('White marble', 2, '#665544', 45);
+      const ctx = window.FloorPlanFinishes.canvas(finish).getContext('2d');
+      return { grout: [...ctx.getImageData(128, 64, 1, 1).data], tile: [...ctx.getImageData(64, 64, 1, 1).data] };
+    });
+    assert.deepEqual(pixels.grout, [102, 85, 68, 255], 'visible tile joints use the selected grout colour');
+    assert.notDeepEqual(pixels.tile, pixels.grout, 'tile faces remain separate from grout');
+    checks.push('dedicated tile samples, valid physical size, visible grout, orientation and Undo');
     await tab('Furniture').click();
     await page.locator('#fp-items').selectOption('0');
     await page.locator('#fp-item-width').fill('6');
@@ -107,6 +131,8 @@ async function run() {
     assert.equal(exportedFloor.height, 11); assert.equal(exportedFloor.furniture[0].width, 6);
     assert.equal(exportedFloor.finishes.wall.color, '#debc97'); assert.equal(exportedFloor.finishes.wall.paint.code, '0336');
     assert.equal(exportedFloor.finishes.exterior.color, '#c9a995'); assert.equal(exportedFloor.finishes.exterior.paint.name, 'Apricot-N');
+    assert.deepEqual(exportedFloor.finishes.floor.tile, { name: 'White marble', grout: '#665544' });
+    assert.equal(exportedFloor.finishes.floor.scale, 4); assert.equal(exportedFloor.finishes.floor.rotation, 45);
     await preview().locator('.fp-view-options > summary').click();
     const glbEvent = page.waitForEvent('download');
     await preview().getByRole('button', { name: 'Download detailed 3D (.glb)', exact: true }).click();
@@ -121,6 +147,12 @@ async function run() {
       assert.ok(rgb.every((value,index) => Math.abs(material.pbrMetallicRoughness.baseColorFactor[index] - value) < .00001));
     }
     checks.push('3D materials and GLB export use the selected Asian Paints colours and shade names');
+    const floorMaterial = scene.materials.find(item => item.name === 'White marble tiles (2 x 2 ft)');
+    assert.ok(floorMaterial?.pbrMetallicRoughness.baseColorTexture, 'GLB contains the rendered tile texture');
+    const tileTransform = floorMaterial.pbrMetallicRoughness.baseColorTexture.extensions.KHR_texture_transform;
+    assert.deepEqual(tileTransform.scale, [.25, .25], 'a four-foot repeat contains two two-foot tiles');
+    assert.ok(Math.abs(Math.abs(tileTransform.rotation) - Math.PI / 4) < .00001, 'GLB keeps diagonal orientation');
+    checks.push('tile texture, physical repeat size and orientation survive GLB export');
     checks.push('multifloor switching preserves edits and JSON export contains them');
 
     await outerTabs().getByRole('tab', { name: 'Project details', exact: true }).click();
@@ -133,12 +165,18 @@ async function run() {
     assert.equal(saved.floorPlan.floors[0].plan.height, 11);
     assert.equal(saved.floorPlan.floors[0].plan.finishes.wall.paint.name, 'Buttercup-N');
     assert.equal(saved.floorPlan.floors[0].plan.finishes.exterior.paint.code, '0501');
-    assert.equal(saved.floorPlan.floors[1].plan.finishes, undefined, 'paint changes stay on the chosen floor');
+    assert.deepEqual(saved.floorPlan.floors[0].plan.finishes.floor, exportedFloor.finishes.floor);
+    assert.equal(saved.floorPlan.floors[1].plan.finishes, undefined, 'paint and tile changes stay on the chosen floor');
     assert.equal(saved.floorPlan.floors[0].plan.furniture[0].width, 6);
     assert.equal(saved.floorPlan.floors[1].plan.height, 9);
     await page.locator(`[data-edit-model="${model.id}"]`).click();
     await tab('Finishes').click(); assert.equal(await interiorPaint().inputValue(), 'Buttercup-N (0336)');
     assert.equal(await exteriorPaint().inputValue(), 'Apricot-N (0501)');
+    assert.equal(await page.getByLabel('Tile size (ft)', { exact: true }).inputValue(), '2');
+    assert.equal(await page.getByLabel('Grout colour', { exact: true }).inputValue(), '#665544');
+    assert.equal(await page.getByLabel('Tile orientation', { exact: true }).inputValue(), '45');
+    assert.equal(await page.getByRole('button', { name: 'White marble floor tiles', exact: true }).getAttribute('aria-pressed'), 'true');
+    await page.locator('.fp-tiles').screenshot({ path: path.join(work, 'floor-tile-controls.png') });
     await page.locator('.fp-paint').screenshot({ path: path.join(work, 'paint-name-controls.png') });
     const retryPage = await context.newPage();
     let catalogueAttempts = 0;
@@ -164,6 +202,14 @@ async function run() {
     await page.setViewportSize({ width: 390, height: 844 });
     await tab('Finishes').click();
     assert.equal(await interiorPaint().inputValue(), 'Buttercup-N (0336)');
+    assert.match(await page.locator('[data-tile-current]').innerText(), /White marble · 2 × 2 ft/);
+    await page.getByRole('button', { name: 'Sage tile floor tiles', exact: true }).click();
+    await page.getByLabel('Tile size (ft)', { exact: true }).fill('1');
+    await tileApply().click();
+    assert.match(await page.locator('[data-tile-current]').innerText(), /Sage tile · 1 × 1 ft/);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.match(await page.locator('[data-tile-current]').innerText(), /White marble · 2 × 2 ft/);
+    await page.locator('.fp-tiles').screenshot({ path: path.join(work, 'floor-tile-controls-mobile.png') });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'named paint controls fit on mobile');
     await page.locator('.fp-paint').screenshot({ path: path.join(work, 'paint-name-controls-mobile.png') });
     await tab('Furniture').click(); await page.locator('#fp-items').selectOption('0');

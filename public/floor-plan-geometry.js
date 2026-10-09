@@ -30,6 +30,11 @@
       if (value.pattern !== 'solid' || !paint || paint.brand !== 'Asian Paints' || typeof paint.name !== 'string' || !paint.name.trim() || paint.name.length > 80 || typeof paint.code !== 'string' || !/^[a-z0-9]{4,8}$/i.test(paint.code)) invalid('Choose a valid Asian Paints shade name and code for solid paint.');
       result.paint = { brand: paint.brand, name: paint.name.trim(), code: paint.code.toUpperCase() };
     }
+    if (value.tile !== undefined) {
+      const tile = value.tile;
+      if (!['tiles', 'checker', 'marble', 'terrazzo'].includes(value.pattern) || !tile || typeof tile.name !== 'string' || !tile.name.trim() || tile.name.length > 80 || typeof tile.grout !== 'string' || !/^#[0-9a-f]{6}$/i.test(tile.grout)) invalid('Choose a valid tile name and six-digit grout colour.');
+      result.tile = { name: tile.name.trim(), grout: tile.grout.toLowerCase() };
+    }
     if (value.pattern === 'custom') {
       if (typeof value.texture !== 'string' || value.texture.length > 700000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.texture)) invalid('Upload a PNG, JPG or WebP texture smaller than 500 KB after compression.');
       result.texture = value.texture;
