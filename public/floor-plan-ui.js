@@ -14,7 +14,7 @@
   function loadRenderer() {
     if (window.FloorPlanRenderer) return Promise.resolve();
     if (!rendererPromise) rendererPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=14';
+      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=15';
       script.onload = resolve;
       script.onerror = () => { script.remove(); rendererPromise = null; reject(new Error('The 3D viewer could not load. Check your connection and choose Retry.')); };
       document.head.append(script);
@@ -162,11 +162,11 @@
     return { update(next) { plan = next; sync(); }, action: viewAction, getStats() { return renderer?.getStats(); } };
   }
 
-  function createEditor(root, initial, { compressImage, onChange, hideDesigner = false }) {
+  function createEditor(root, initial, { compressImage, onChange }) {
     let plan = initial ? G.validate(initial) : null;
     let pending = null, cursor = null, selected = -1, selectedFurniture = -1, tool = 'wall', history = [], uploading = false, image = null, suggestions = [];
     let uploadVersion = 0, autoOnLoad = false, editRevision = 0, analysis = null, useLargeInitialScale = false;
-    let designer = null, designing = false;
+    let paintControls = null;
     let recognitionReady = false;
     let scanSavedOpenings = !!initial && (initial.openingDetectionVersion || 0) < 4;
     root.innerHTML = `<div class="form-section"><h2>Floor plan to 3D</h2><p>Upload a clear floor-plan drawing to generate a first 3D layout automatically. Review the detected walls, dimensions and openings before publishing.</p></div>
@@ -175,7 +175,6 @@
       <div class="fp-recognition-pipeline"><p>Upload drawing → Recognize walls, doors, windows and furniture → Review → Set building size → Export 3D</p><small data-recognition-status>Checking floor plan recognition…</small></div>
       <div class="field"><label for="fp-recognition-method">Recognition method</label><select id="fp-recognition-method"><option value="auto">Automatic — FLRplanner or solid coloured walls</option><option value="standard">FLRplanner — original recognition</option><option value="colored">Coloured walls — straight filled wall strips</option></select><small>Automatic keeps the original method unless it finds a strong network of solid coloured walls. Change the method, then detect again. Coloured-wall recognition currently supports horizontal and vertical wall strips.</small></div>
       <label class="fp-snap"><input type="checkbox" data-vision-enabled disabled> Ask the local vision model to review suspicious walls</label><small class="fp-note" data-vision-status>Checking local vision review…</small>
-      <section class="fp-designer" data-fp-designer hidden></section>
       <div class="fp-workspace" hidden>
         <section class="fp-building-size" aria-labelledby="fp-size-title"><h3 id="fp-size-title">Building size</h3><p class="fp-note">Set the building's outside width and depth, excluding drawing margins. New uploads start with a provisional 60 ft long side. Use actual dimensions or a printed measurement before publishing.</p>
           <div class="fp-size-fields"><div class="field"><label for="fp-building-width">Building width (ft)</label><input id="fp-building-width" type="number" min="4" max="500" step=".01"></div><div class="field"><label for="fp-building-depth">Building depth (ft)</label><input id="fp-building-depth" type="number" min="4" max="500" step=".01"></div></div>
@@ -187,14 +186,13 @@
           <div class="field"><label for="fp-height">Wall height (ft)</label><input id="fp-height" type="number" min="7" max="25" step=".1" required></div>
           <div class="field"><label for="fp-thickness">Wall thickness (ft)</label><input id="fp-thickness" type="number" min=".2" max="2" step=".01" required></div>
         </div>
-        <section class="fp-finishes" aria-labelledby="fp-finishes-title"><div class="fp-finish-heading"><div><h3 id="fp-finishes-title">Walls, floors &amp; ceiling</h3><p class="fp-note">Choose a finish, mix your own colors, or upload a wallpaper or flooring sample. Select a wall on the drawing to give it its own finish.</p></div><span class="fp-library-count">${F.COLORS.length} colors / ${Object.values(F.PRESETS).flat().length} finishes</span></div>
+        <section class="fp-finishes" aria-label="Paint and surface finishes"><div data-fp-paint></div><details class="workspace-disclosure fp-material-options"><summary>Flooring, ceiling &amp; custom finishes</summary><div class="fp-finish-heading"><div><h3 id="fp-finishes-title">Surface materials</h3><p class="fp-note">Choose a finish, mix your own colors, or upload a wallpaper or flooring sample. Select a wall on the drawing to give it its own finish.</p></div><span class="fp-library-count">${F.COLORS.length} colors / ${Object.values(F.PRESETS).flat().length} finishes</span></div>
           <div class="fp-wall-sides"><div class="field"><label for="fp-wall-outside">Selected wall: inside / outside</label><select id="fp-wall-outside"><option value="auto">Automatic from layout</option><option value="none">Interior partition (both faces inside)</option><option value="left">Exterior: outside on marked Side 1</option><option value="right">Exterior: outside on opposite Side 2</option><option value="both">Both faces outdoors</option></select></div><p class="fp-note" data-wall-sides-note></p></div>
           <div class="fp-finish-fields"><div class="field"><label for="fp-finish-target">Apply finish to</label><select id="fp-finish-target"><option value="wall">Inside wall faces on this floor</option><option value="exterior">Outside wall faces on this floor</option><option value="selected-wall">Selected wall: inside face(s)</option><option value="selected-exterior">Selected wall: outside face(s)</option><option value="floor">Flooring on this floor</option><option value="ceiling">Ceiling on this floor</option></select></div><div class="field"><label for="fp-finish-color">Base color or image tint</label><div class="fp-color-input"><input id="fp-finish-color" type="color" aria-label="Choose any surface color"><input id="fp-finish-hex" type="text" maxlength="7" spellcheck="false" placeholder="#EEE8DE" aria-label="Custom surface hex color"></div></div><div class="field"><label for="fp-finish-accent">Pattern / grout color</label><input id="fp-finish-accent" type="color"></div><div class="field"><label for="fp-finish-scale">Sample repeat size (ft)</label><input id="fp-finish-scale" type="number" min=".25" max="20" step=".25"></div><div class="field"><label for="fp-finish-rotation">Pattern direction (degrees)</label><input id="fp-finish-rotation" type="number" min="-180" max="180" step="15"></div></div>
-          <div class="fp-finish-locks" role="group" aria-label="Protect finishes from Surprise me"><label><input type="checkbox" data-finish-lock="wall"> Lock all walls on this floor (inside &amp; outside)</label><label><input type="checkbox" data-finish-lock="exterior"> Lock exterior on this floor</label><label><input type="checkbox" data-finish-lock="floor"> Lock flooring on this floor</label><label><input type="checkbox" data-finish-lock="ceiling"> Lock ceiling on this floor</label><label><input type="checkbox" data-finish-lock="selected-wall"> <span data-selected-lock-label>Lock selected wall</span></label></div><p class="fp-note" data-finish-lock-note>Locks protect designs from Surprise me. A selected wall lock keeps both its inside and outside finishes. You can still edit locked finishes manually.</p>
           <p class="fp-note" data-finish-description></p><div class="fp-color-palette" role="group" aria-label="Surface color library"></div>
           <div class="fp-finish-library" role="group" aria-label="Surface finish library"></div>
           <div class="fp-finish-upload"><div class="field"><label for="fp-finish-upload">Your wallpaper, flooring or ceiling texture</label><input id="fp-finish-upload" type="file" accept="image/png,image/jpeg,image/webp"><small>Upload a clear material sample. A seamless image repeats best. The preview keeps its proportions; adjust repeat size and direction above.</small></div><button type="button" class="btn btn-outline btn-small" data-action="reset-finish">Reset this finish</button></div>
-          <p class="fp-note">The ceiling is a flat finish preview at the wall height. Use Ceiling view to inspect it. Save the project to keep your finishes.</p>
+          <p class="fp-note">The ceiling is a flat finish preview at the wall height. Use Ceiling view to inspect it. Save the project to keep your finishes.</p></details>
         </section>
         <p class="fp-note">Width and depth must describe the entire cropped image. Doorways are 6.8 ft high; windows run from 3 to 6.5 ft. These opening heights are illustrative.</p><label class="fp-scale-check"><input type="checkbox" id="fp-scale-confirmed"> I checked the drawing width and depth against the plan</label>
         <div class="fp-calibration"><div class="field"><label for="fp-reference">Known distance between two points (ft)</label><input id="fp-reference" type="number" min=".1" max="500" step=".01" value="10"><small>Enter a measured distance, choose Set scale, then click its two endpoints on the drawing. This preserves the image proportions, including margins. Use only a flat, undistorted drawing.</small></div><button class="btn btn-outline btn-small" type="button" data-tool="scale" aria-pressed="false">Set scale from measurement</button></div>
@@ -228,7 +226,7 @@
     // The status sits between the upload and recognition options in the original markup.
     for (let node = status.nextElementSibling; node && node !== workspace;) {
       const next = node.nextElementSibling;
-      if (!node.matches('[data-fp-designer]')) source.append(node);
+      source.append(node);
       node = next;
     }
     root.prepend(source);
@@ -277,11 +275,9 @@
     exports.querySelector('div').append(root.querySelector('[data-action="export"]'), root.querySelector('[data-action="export-json"]'));
     previewPanel.append(exports);
     const finishOptions = document.createElement('details'); finishOptions.className = 'workspace-disclosure';
-    finishOptions.innerHTML = '<summary>Wall faces &amp; protected finishes</summary>';
-    finishOptions.append(finishes.querySelector('.fp-wall-sides'), finishes.querySelector('.fp-finish-locks'), finishes.querySelector('[data-finish-lock-note]'));
+    finishOptions.innerHTML = '<summary>Wall face direction</summary>';
+    finishOptions.append(finishes.querySelector('.fp-wall-sides'));
     finishes.append(finishOptions);
-    const localDesigner = root.querySelector('[data-fp-designer]');
-    finishes.prepend(localDesigner);
     const canvas = root.querySelector('.fp-trace-canvas'), ctx = canvas.getContext('2d');
     const viewer = createViewer(root.querySelector('[data-fp-viewer]'), plan, '3D floor-plan preview', { editable: true, onSelectFurniture(index) { editorTabs.select('furniture'); selectedFurniture = index; selected = -1; refresh(); } });
     const say = (message, error = false) => { status.textContent = message; status.classList.toggle('error-message', error); };
@@ -311,7 +307,8 @@
     function applyFinish(value) {
       if (!canFinish()) return say('Select a wall on the drawing or in Saved segments first.', true);
       try {
-        const finish=G.validateFinish(value),target=finishTarget.value,property=finishKey(target)==='exterior'?'exteriorFinish':'finish';
+        const {paint, ...material}=value;
+        const finish=G.validateFinish(material),target=finishTarget.value,property=finishKey(target)==='exterior'?'exteriorFinish':'finish';
         const stored=individualTarget(target)?plan.walls[selected][property]:plan.finishes?.[target];
         if (stored && JSON.stringify(stored) === JSON.stringify(finish)) { syncFinishControls(); return; }
         const next=individualTarget(target)?{...plan,walls:plan.walls.map((wall,i)=>i===selected?{...wall,[property]:finish}:wall)}:{...plan,finishes:{...plan.finishes,[target]:finish}};
@@ -321,21 +318,14 @@
       } catch(error) { say(error.message, true); syncFinishControls(); }
     }
     function syncFinishControls() {
-      const target=finishTarget.value,key=finishKey(target),finish=currentFinish(),enabled=canFinish()&&!finishUploading&&!analysis&&!designing;
+      const target=finishTarget.value,key=finishKey(target),finish=currentFinish(),enabled=canFinish()&&!finishUploading&&!analysis;
       for (const [id,value] of [['color',finish.color],['hex',finish.color.toUpperCase()],['accent',finish.accent],['scale',finish.scale],['rotation',finish.rotation]]) {
         const input = root.querySelector(`#fp-finish-${id}`); input.value = value; input.disabled = !enabled;
       }
       root.querySelector('#fp-finish-upload').disabled = !enabled;
       root.querySelector('[data-action="reset-finish"]').disabled = !enabled;
-      const locksEnabled = !!plan && !finishUploading && !analysis && !designing;
-      for (const control of root.querySelectorAll('[data-finish-lock]')) {
-        const key=control.dataset.finishLock, individual=key==='selected-wall';
-        control.checked=individual ? plan?.walls[selected]?.finishLocked===true : plan?.finishLocks?.[key]===true;
-        control.disabled=!locksEnabled||(individual&&plan.walls[selected]?.kind!=='wall');
-      }
-      root.querySelector('[data-selected-lock-label]').textContent=plan?.walls[selected]?.kind==='wall'?`Lock selected wall (${selected+1})`:'Lock selected wall';
       const sides=G.wallSurfaces(plan),sideControl=root.querySelector('#fp-wall-outside');
-      sideControl.disabled=!locksEnabled||plan?.walls[selected]?.kind!=='wall';sideControl.value=plan?.walls[selected]?.outside||'auto';
+      sideControl.disabled=!plan||finishUploading||!!analysis||plan?.walls[selected]?.kind!=='wall';sideControl.value=plan?.walls[selected]?.outside||'auto';
       const uncertain=sides.filter((s,i)=>plan.walls[i].kind==='wall'&&s.uncertain).length,selectedSide=sides[selected];
       root.querySelector('[data-wall-sides-note]').textContent=(selectedSide&&plan.walls[selected]?.kind==='wall'?`Selected wall: ${selectedSide.outside==='none'?'both faces inside':selectedSide.outside==='both'?'both faces exposed':`outside on Side ${selectedSide.outside==='left'?'1':'2'}`}${selectedSide.source==='manual'?' (your setting)':' (automatic)'}. `:'Select a wall to review its outside direction. ')+(uncertain?`${uncertain} wall(s) need review because the layout is open. Exposed faces use the exterior finish until corrected.`:'Inside and outside faces use separate finishes. Review courtyards and incomplete boundaries manually.');
       root.querySelector('[data-finish-description]').textContent = !enabled && !finishUploading ? 'Choose a wall in Saved segments or click one with Select, then apply its finish.' : finish.pattern === 'custom' ? 'Your uploaded image is repeated across the chosen faces. White tint keeps its original colors.' : `${finish.pattern.charAt(0).toUpperCase()+finish.pattern.slice(1)} finish. ${key==='wall'?'Applied only to inside faces. Outside faces keep their exterior finish.':key==='exterior'?'Applied only to exposed outside faces. Inside paint and wallpaper stay separate.':'Changes appear immediately in the 3D preview.'}`;
@@ -350,31 +340,17 @@
       }
       library.querySelectorAll('button').forEach(button => { button.disabled = !enabled; button.setAttribute('aria-pressed',String(button.dataset.pattern === finish.pattern && button.dataset.color === finish.color)); });
       root.querySelectorAll('.fp-color-palette button').forEach(button => { button.disabled = !enabled; button.setAttribute('aria-pressed',String(button.dataset.color === finish.color)); });
+      paintControls?.sync();
     }
     F.COLORS.forEach(({name,color}) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'fp-color-swatch'; button.style.backgroundColor = color; button.dataset.color = color; button.title = `${name} ${color}`; button.setAttribute('aria-label',`${name} ${color}`); button.onclick = () => applyFinish({...currentFinish(),color}); root.querySelector('.fp-color-palette').append(button);
     });
     finishTarget.onchange = () => { syncFinishControls(); if (finishTarget.value === 'ceiling' && plan) viewer.action('ceiling-view'); };
     root.querySelector('#fp-wall-outside').onchange=event=>{
-      if(!plan||analysis||designing||finishUploading||plan.walls[selected]?.kind!=='wall')return;
+      if(!plan||analysis||finishUploading||plan.walls[selected]?.kind!=='wall')return;
       const next={...plan,walls:plan.walls.map((wall,i)=>{if(i!==selected)return wall;const {outside,...value}=wall;return event.target.value==='auto'?value:{...value,outside:event.target.value};})};
       try{G.validate(next);pushHistory();plan=next;refresh();say('Wall faces updated. Choose separate inside and outside finishes, then save the project.');}catch(error){say(error.message,true);syncFinishControls();}
     };
-    root.querySelectorAll('[data-finish-lock]').forEach(control=>control.onchange=()=>{
-      if(!plan||analysis||designing||finishUploading)return;
-      const key=control.dataset.finishLock,locked=control.checked;
-      try {
-        let next;
-        if(key==='selected-wall') {
-          if(plan.walls[selected]?.kind!=='wall')return;
-          const finish=plan.walls[selected].finish||plan.finishes?.wall||F.DEFAULTS.wall;
-          const exteriorFinish=plan.walls[selected].exteriorFinish||plan.finishes?.exterior||F.DEFAULTS.exterior;
-          next={...plan,walls:plan.walls.map((wall,i)=>i===selected?{...wall,finishLocked:locked,...(locked?{finish:G.validateFinish(finish),exteriorFinish:G.validateFinish(exteriorFinish)}:{})}:wall)};
-        } else next={...plan,finishLocks:{...plan.finishLocks,[key]:locked}};
-        G.validate(next);pushHistory();plan=next;refresh();
-        say(locked?'Design locked. Surprise me will keep this finish while regenerating the others. Save the project to keep the lock.':'Design unlocked. Surprise me can change it again.');
-      }catch(error){say(error.message,true);syncFinishControls();}
-    });
     for (const [id,key] of [['color','color'],['hex','color'],['accent','accent'],['scale','scale'],['rotation','rotation']]) root.querySelector(`#fp-finish-${id}`).onchange = event => applyFinish({...currentFinish(),[key]: ['scale','rotation'].includes(key) ? Number(event.target.value) : event.target.value});
     root.querySelector('#fp-finish-upload').onchange = async event => {
       const file = event.target.files[0]; if (!file || !canFinish()) return;
@@ -413,8 +389,8 @@
       return tool === 'scale' ? 'Set scale: click the two endpoints of your known measurement.' : tool === 'furniture' ? 'Place furniture: click where the selected item should go.' : tool === 'select' ? 'Select: click a wall, opening or furniture item to edit it.' : `${tool === 'wall' ? 'Wall' : tool === 'door' ? 'Doorway' : 'Window'}: click two endpoints to add a segment.`;
     }
     function syncControls() {
-      root.querySelector('#fp-recognition-method').disabled = !!analysis || designing;
-      root.querySelector('[data-vision-enabled]').disabled = root.dataset.visionConfigured!=='true' || !!analysis || designing;
+      root.querySelector('#fp-recognition-method').disabled = !!analysis;
+      root.querySelector('[data-vision-enabled]').disabled = root.dataset.visionConfigured!=='true' || !!analysis;
       workspace.hidden = !plan;
       if (plan && !hadPlan) { source.open = false; editorTabs.select(plan.scaleConfirmed === false ? 'setup' : 'layout'); }
       hadPlan = !!plan;
@@ -496,7 +472,7 @@
       const segments = root.querySelector('#fp-segments');
       segments.replaceChildren(new Option('No segment selected', '-1'));
       const sides=G.wallSurfaces(plan);
-      plan?.walls.forEach((w, i) => segments.add(new Option(`${i + 1}. ${w.kind === 'door' ? 'Doorway' : w.kind === 'window' ? 'Window' : sides[i].uncertain?'Wall · review faces':sides[i].outside==='none'?'Interior wall':'Exterior wall'} · ${Math.hypot((w.b[0] - w.a[0]) * plan.width, (w.b[1] - w.a[1]) * plan.depth).toFixed(1)} ft${w.kind==='wall'&&(w.finishLocked||plan.finishLocks?.wall)?' · Design locked':''}`, String(i))));
+      plan?.walls.forEach((w, i) => segments.add(new Option(`${i + 1}. ${w.kind === 'door' ? 'Doorway' : w.kind === 'window' ? 'Window' : sides[i].uncertain?'Wall · review faces':sides[i].outside==='none'?'Interior wall':'Exterior wall'} · ${Math.hypot((w.b[0] - w.a[0]) * plan.width, (w.b[1] - w.a[1]) * plan.depth).toFixed(1)} ft`, String(i))));
       segments.value = String(selected);
       if (selected >= 0) {
         const w = plan.walls[selected];
@@ -515,12 +491,10 @@
       }
       renderSuggestions();
       syncFinishControls();
-      workspace.setAttribute('aria-busy', String(!!analysis || designing));
+      workspace.setAttribute('aria-busy', String(!!analysis ));
       // Keep the worker's input stable; otherwise an edit silently invalidates
       // its result and an uploaded plan can remain empty after recognition.
-      if (analysis || designing) workspace.querySelectorAll('input, select, button').forEach(control => { control.disabled = true; });
-      root.querySelector('#fp-upload').disabled = designing;
-      designer?.sync();
+      if (analysis ) workspace.querySelectorAll('input, select, button').forEach(control => { control.disabled = true; });
     }
     function draw() {
       if (!plan) return;
@@ -576,7 +550,7 @@
       next.src = plan.image;
     }
     function validateDraft() {
-      if (uploading || autoOnLoad || analysis || finishUploading || designing) throw new Error('Wait for the drawing, finish upload and design to finish before saving.');
+      if (uploading || autoOnLoad || analysis || finishUploading) throw new Error('Wait for the drawing and finish upload to finish before saving.');
       if (!plan) return null;
       for (const key of ['width', 'depth', 'height', 'thickness']) plan[key] = Number(root.querySelector(`#fp-${key}`).value);
       plan.scaleConfirmed = root.querySelector('#fp-scale-confirmed').checked;
@@ -776,7 +750,7 @@
       } catch (error) { say(error.message, true); }
     }
     canvas.onclick = e => {
-      if (!plan || !image?.naturalWidth || analysis || designing) return;
+      if (!plan || !image?.naturalWidth || analysis ) return;
       const p = point(e);
       if (tool === 'furniture') {
         try {
@@ -877,16 +851,13 @@
     root.querySelector('[data-annotation-overlay]').onchange = draw;
     root.querySelector('[data-candidate-overlay]').onchange = draw;
     root.querySelector('[data-vision-overlay]').onchange = draw;
-    if (!hideDesigner && window.FloorPlanDesign) {
-      const designRoot = root.querySelector('[data-fp-designer]'); designRoot.hidden = false;
-      designer = window.FloorPlanDesign.createControls(designRoot, {
-        getModel: validateDraft, peekModel: () => plan,
-        applyModel(next) { pushHistory(); plan = next; refresh(); },
-        isReady: () => !!plan && G.hasGeometry(plan) && !uploading && !autoOnLoad && !analysis && !finishUploading,
-        onBusy(value) { designing = value; syncControls(); }
-      });
-    }
-    register(root, () => { resize.disconnect(); ++uploadVersion; analysis?.cancel(); designer?.dispose(); });
+    paintControls = window.FloorPlanPaint.createControls(root.querySelector('[data-fp-paint]'), {
+      getPlan: () => plan,
+      applyPlan(next) { pushHistory(); plan = next; refresh(); },
+      isReady: () => !!plan && !uploading && !autoOnLoad && !analysis && !finishUploading,
+      onStatus: say
+    });
+    register(root, () => { resize.disconnect(); ++uploadVersion; analysis?.cancel(); });
     if (plan) loadImage(); refresh();
     return { getValue: validateDraft };
   }

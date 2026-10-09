@@ -57,29 +57,15 @@ Recognition sends the drawing and its entered dimensions to the configured
 service. It does not save or publish automatically. The same editor appears in
 **Previous projects → Edit → Floor plan and 3D model**.
 
-## Surprise me interior designer
+## Paint by Asian Paints shade name
 
-In an owner project/listing/model editor, open **Floor plan & 3D**, upload and review a floor plan, then expand **Style assistant for all floors** to use **Surprise me**. Choose a style and Paint + an accent, Paint only, or Wallpaper for inside wall faces. The designer chooses a separate complementary exterior finish using render, paint, stone, concrete or cladding; it never generates exterior wallpaper. Finishes apply to every uploaded floor; empty floors are skipped. **Undo design** restores the entire previous house design when no later planner changes have been made. Try another design for a different palette, or adjust colors and patterns manually. Save the project to persist the result. Geometry, openings, furniture and dimensions are preserved.
+Open **Floor plan & 3D → Finishes**. Type an **Interior paint name** and an **Exterior paint name** separately, check each swatch and shade code, then choose **Apply interior paint** or **Apply exterior paint**. Enter also applies the focused field. Names and shade codes are accepted without case sensitivity; Buttercup resolves to **Buttercup-N (0336)** and Apricot to **Apricot-N (0501)**. Partial names offer matching suggestions; unknown or ambiguous names never change the model.
 
-In **Walls, floors & ceiling**, select a wall on the drawing or in **Saved segments**, then enable **Lock selected wall** to keep both its inside and outside finishes, including uploaded samples. You can also **Lock all walls on this floor (inside & outside)**, **Lock exterior on this floor**, **Lock flooring on this floor**, or **Lock ceiling on this floor**. Switch floors to set their locks separately. **Surprise me** regenerates only unprotected finishes; a wall inheriting a floor-wide finish gets its own copy when individually locked. Locks persist when the project is saved and reopened. Manual finish edits remain available while locked. Unlock a surface to include it in later generations; the button is disabled when all rendered finishes are protected. **Also keep unlocked individual wall finishes** optionally preserves existing inside/outside overrides as well, and is off by default.
+Paint applies to all corresponding wall faces on the selected floor, replacing individual overrides on that side. The opposite side, flooring, ceiling, geometry, furniture and dimensions stay as saved. Select another floor to paint it separately. Undo restores the previous finishes. The floor and combined-building previews update, and saved projects, layout JSON and detailed GLB exports retain the shade names and codes. Older finishes remain visible until you replace them.
 
-Without an API key, the button uses ten coordinated local palettes and clearly labels them **Local design palette**. The custom brief is disabled in local mode. Local palettes are not AI generation. With a configured provider, the server sends a bounded summary of floor geometry, furniture types and protected finish colors/patterns plus the selected style and brief, receives JSON finish choices, validates them, and applies them as **AI design**. The provider is instructed to coordinate new designs with protected finishes; accents targeting protected walls are rejected, and locks are enforced again when applying the design. Drawing images, uploaded textures, project addresses and credentials are not sent in this request. Provider errors leave the existing design intact; a configured but failing provider never silently switches to local generation.
+**Flooring, ceiling & custom finishes** contains the material library and uploaded texture controls. **Wall face direction** lets you correct which side of a wall is outdoors when the layout is incomplete.
 
-The designer displays **AI not connected** or **AI provider configured** before generating. Configured means a server key is present; a successful generation confirms a working provider request. Floor-plan recognition uses the separate CubiCasa5K service independently of that provider. The surface designer does not replace recognition or infer room labels from the image.
-
-Copy `.env.example` to the ignored `.env.local` file and set these server variables:
-
-```dotenv
-AI_DESIGN_API_KEY=your-provider-key
-AI_DESIGN_BASE_URL=https://openrouter.ai/api/v1
-AI_DESIGN_MODEL=your-provider-model-id
-AI_DESIGN_PROTOCOL=chat
-AI_DESIGN_JSON_MODE=json
-```
-
-Start with `node --env-file=.env.local server.js` so Node loads the variables. Production uses the hosting service's encrypted environment settings. Never put the key in browser JavaScript or source control. Use the exact model ID your provider supports. Other OpenAI-compatible API roots can be used, including Gemini's `https://generativelanguage.googleapis.com/v1beta/openai`, Groq's `https://api.groq.com/openai/v1`, and DeepSeek's `https://api.deepseek.com`. Provider/model compatibility must be verified for the chosen account. Official compatibility references: [OpenRouter](https://openrouter.ai/docs/quickstart), [Gemini](https://ai.google.dev/gemini-api/docs/openai), [Groq](https://console.groq.com/docs/openai), [DeepSeek](https://api-docs.deepseek.com/).
-
-`AI_DESIGN_JSON_MODE=schema` enables strict schema output for compatible models. `json` requests JSON mode; `off` relies on a JSON prompt for providers without those options. All modes still validate every finish and wall index locally. OpenAI Responses is available with `AI_DESIGN_PROTOCOL=responses` and an OpenAI API root; `OPENAI_API_KEY` remains a fallback environment name. Local HTTP model servers on localhost are accepted; remote providers require HTTPS. The authenticated endpoint is `/api/admin/design-surprise`, permits one active request per owner session, and limits retries to ten per minute. API generation does not save or publish anything.
+The bundled catalogue contains 2,200 shade names, codes and digital swatches from [Asian Paints’ official DecorPro catalogue](https://www.asianpaints.com/decorpro/shades/colour-catalogues.html), retrieved on 9 October 2026. Screen colours are a preview; use a physical shade card for the final paint. This workflow needs no AI account or external request while choosing shades. The former style assistant and generation endpoint have been removed.
 
 ## Multi-floor buildings for current and previous projects
 

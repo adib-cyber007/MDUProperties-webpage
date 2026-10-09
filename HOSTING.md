@@ -24,7 +24,7 @@ Production owner cookies are HMAC-signed using `ADMIN_SESSION_SECRET` and bound 
 
 The website's service binding injects `FLOORPLAN_RECOGNITION_URL` at runtime. Do not set that variable manually for this Vercel Services deployment. All public routes go to the website; the recognition container has no public rewrite. Owner authentication and the private service token protect uploads. Preview calls its own recognition container, and production calls its own. The container installs pinned CPU dependencies and downloads the hash-verified CubiCasa checkpoint during its build; local checkpoints and virtual environments are excluded. Cold startup may take longer than a warm request, so recognition health checks allow 20 seconds.
 
-The existing Telegram and AI-design features remain optional; their environment variables are listed in `.env.example`. Saved-model viewing and walkthroughs need no recognition service. For other hosts, the separate service setup remains supported: set `FLOORPLAN_RECOGNITION_URL` to its HTTPS URL with the matching token. Reviewed layout JSON can be imported without recognition.
+Telegram remains optional; its environment variables are listed in `.env.example`. Paint shade selection runs locally in the browser and needs no AI provider. Saved-model viewing and walkthroughs need no recognition service. For other hosts, the separate service setup remains supported: set `FLOORPLAN_RECOGNITION_URL` to its HTTPS URL with the matching token. Reviewed layout JSON can be imported without recognition.
 
 The default recognizer is the restored FLRplanner-derived CubiCasa5K pipeline
 for walls, doors, windows, room predictions and fixed fixtures. It requires only

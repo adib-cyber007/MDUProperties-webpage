@@ -1,12 +1,11 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const G=require('../public/floor-plan-geometry'),D=require('../public/floor-plan-design'),F=require('../public/floor-plan-finishes');
+const G=require('../public/floor-plan-geometry'),F=require('../public/floor-plan-finishes');
 const image='data:image/png;base64,AAAA';
 const wall=(a,b)=>({kind:'wall',a,b});
 const rectangle=()=>G.validate({version:1,image,width:30,depth:40,height:10,thickness:.5,walls:[
   wall([.1,.1],[.9,.1]),wall([.9,.1],[.9,.9]),wall([.9,.9],[.1,.9]),wall([.1,.9],[.1,.1]),wall([.5,.1],[.5,.9])
 ]});
-const request=p=>D.validateRequest({context:D.context(p),style:'natural',wallLook:'wallpaper',brief:''});
 
 test('envelope faces differ from interior partitions, including concave and rotated layouts',()=>{
   const plan=rectangle();assert.deepEqual(G.wallSurfaces(plan).map(s=>s.outside),['right','right','right','right','none']);
@@ -42,19 +41,4 @@ test('inside wallpaper and exterior cladding survive cut walls and surround open
   assert.ok(boxes.filter(b=>Math.abs(b.z+16)<.01).every(b=>b.outside==='right'&&b.exteriorFinish===saved.walls[0].exteriorFinish));
   assert.ok(boxes.some(b=>b.outside==='none'),'partition has no outside material face');
   assert.ok(G.cutWalls(saved).filter(w=>w.kind==='wall'&&w.a[1]===.1&&w.b[1]===.1).every(w=>w.exteriorFinish===saved.walls[0].exteriorFinish));
-});
-
-test('Surprise me separates the facade, rejects exterior wallpaper, and preserves outside-only locks',()=>{
-  const plan=rectangle();plan.finishes={exterior:F.PRESETS.exterior[7].finish};plan.finishLocks={exterior:true};
-  const req=request(plan),design=D.localDesign(req,()=>0),next=D.applyDesign(plan,design,{keepOverrides:false});
-  assert.equal(next.finishes.wall.pattern,'botanical');assert.deepEqual(next.finishes.exterior,plan.finishes.exterior);
-  assert.notDeepEqual(design.finishes.wall,design.finishes.exterior);assert.ok(D.EXTERIOR_PATTERNS.includes(design.finishes.exterior.pattern));
-  assert.throws(()=>D.validateDesign({...design,finishes:{...design.finishes,exterior:design.finishes.wall}},req),/unsuitable surface/);
-  assert.equal(req.context.floors[0].walls[4].outside,'none');assert.deepEqual(req.context.floors[0].lockedFinishes.exterior,plan.finishes.exterior);
-  plan.walls[0].finishLocked=true;plan.walls[0].exteriorFinish={...F.DEFAULTS.exterior,pattern:'custom',texture:image};
-  const nextLocked=D.applyDesign(plan,D.localDesign(request(plan),()=>0),{keepOverrides:false});
-  assert.deepEqual(nextLocked.walls[0].exteriorFinish,plan.walls[0].exteriorFinish);assert.doesNotMatch(JSON.stringify(request(plan)),/data:image|texture/);
-  const exposed={...plan,walls:plan.walls.map(w=>({...w,outside:'both',finishLocked:false})),finishLocks:{}};
-  const exposedReq=request(exposed),exposedDesign=D.localDesign(exposedReq,()=>0);assert.equal(exposedDesign.accents.length,0);
-  assert.throws(()=>D.validateDesign({...exposedDesign,accents:[{floorIndex:0,wallIndex:0,finish:design.finishes.wall}]},exposedReq),/inside face/);
 });

@@ -32,7 +32,6 @@ const SESSION_KEY = PRODUCTION && ADMIN_PASSWORD
   : null;
 const sessions = new Map();
 const loginAttempts = new Map();
-const designRequests = new WeakMap();
 const recognitionRequests = new WeakMap();
 const localTelegramStates = new Map();
 let serverlessStore = null;
@@ -667,22 +666,6 @@ async function handleApi(req, res, url) {
     res.once('close', cancel);
     try { return sendJson(res, 200, await recognizer.analyze(body, controller.signal)); }
     finally { res.off('close', cancel); recognitionRequests.set(session, { busy: false, recent }); }
-  }
-  if (url.pathname === '/api/admin/design-surprise') {
-    if (!requireAuth(req, res)) return;
-    if (req.method === 'GET') return sendJson(res, 200, { configured: Boolean(process.env.AI_DESIGN_API_KEY || process.env.OPENAI_API_KEY) });
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
-    const session = getSession(req), previous = designRequests.get(session);
-    const recent = (previous?.recent || []).filter(at => at > Date.now() - 60000);
-    if (previous?.busy || recent.length >= 10) return sendJson(res, 429, { error: 'The designer is busy. Wait a moment before trying another.' });
-    // Eight floors with per-wall inside/outside lock references can exceed
-    // 80 KB. The designer still bounds floors, segments and every finish.
-    const body = await readJson(req, 1024 * 1024);
-    recent.push(Date.now()); designRequests.set(session, { busy: true, recent });
-    try {
-      const { createDesigner } = require('./floor-plan-ai');
-      return sendJson(res, 200, await createDesigner().generate(body));
-    } finally { designRequests.set(session, { busy: false, recent }); }
   }
   if (url.pathname === '/api/telegram/webhook') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });

@@ -6,14 +6,14 @@
     const checked = G.validate(initial);
     const blank = index => ({ name: G.floorName(index), plan: null, offsetX: 0, offsetZ: 0, slabThickness: .5 });
     let building = checked?.version === 2 ? checked : { version: 2, published: checked?.published || false, floors: checked ? G.floorsOf(checked).map(({ name, plan, offsetX, offsetZ, slabThickness }) => ({ name, plan, offsetX, offsetZ, slabThickness })) : [blank(0)] };
-    let selected = 0, child = null, mounting = false, timer, designer = null, designing = false;
+    let selected = 0, child = null, mounting = false, timer;
     root.classList.add('building-editor');
     root.innerHTML = `<div class="building-heading"><h2>Floor plan &amp; 3D workspace</h2><p>Add a drawing for each floor, check the layout, then review your building. You can save your work as a draft.</p></div>
       <div class="building-floor-bar"><label>Number of floors <select data-floor-count aria-label="Number of floors">${Array.from({ length: G.MAX_FLOORS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}</select></label><label>Edit floor <select data-edit-floor aria-label="Edit floor"></select></label></div>
       <p data-building-status role="status" aria-live="polite"></p>
       <details class="workspace-disclosure building-alignment"><summary>Floor alignment &amp; slab settings</summary><div class="building-position form-grid"><label>Slab thickness (ft)<input data-position="slabThickness" type="number" min=".2" max="3" step=".1"></label><label>Left/right offset (ft)<input data-position="offsetX" type="number" min="-500" max="500" step=".1"></label><label>Front/back offset (ft)<input data-position="offsetZ" type="number" min="-500" max="500" step=".1"></label></div>
       <p class="fp-note">Ground floor stays at the bottom. Upper floors stack using the floor below’s wall height and their slab thickness. Drawings align at their centres; use offsets to align stairs and outside walls when plans have different margins.</p></details>
-      <div data-floor-host></div><details class="workspace-disclosure building-design" data-building-design hidden><summary>Style assistant for all floors</summary><section class="fp-designer" data-building-designer hidden></section></details><details class="workspace-disclosure building-preview"><summary>Review entire building in 3D</summary><p data-floor-summary></p><div data-building-viewer></div></details>
+      <div data-floor-host></div><details class="workspace-disclosure building-preview"><summary>Review entire building in 3D</summary><p data-floor-summary></p><div data-building-viewer></div></details>
       <div class="building-publication"><label class="building-publish"><input type="checkbox" data-building-published> Show this 3D building on this property’s page</label><p class="fp-note">Check the dimensions and walls on every floor before publishing. Leave this unchecked to keep a draft, then save your changes.</p></div>`;
     const count = root.querySelector('[data-floor-count]'), selector = root.querySelector('[data-edit-floor]'), publish = root.querySelector('[data-building-published]');
     const status = root.querySelector('[data-building-status]');
@@ -31,7 +31,6 @@
       root.querySelector('[data-floor-summary]').textContent = G.floorsOf(building).map(f => `${f.name}: ${f.plan ? `${f.elevation.toFixed(1)} ft elevation` : 'drawing needed'}`).join(' · ');
     }
     function capture() {
-      if (designing) throw new Error('Wait for the house design to finish before saving or changing floors.');
       if (child) building.floors[selected].plan = child.getValue();
       root.querySelectorAll('[data-position]').forEach(input => { building.floors[selected][input.dataset.position] = Number(input.value); });
       building = G.validate({ ...building, published: false });
@@ -43,10 +42,9 @@
       const floorIndex = selected;
       root.querySelectorAll('[data-position]').forEach(input => { input.value = floor[input.dataset.position]; });
       const host = root.querySelector('[data-floor-host]'), panel = document.createElement('div'); host.replaceChildren(panel);
-      child = singleFloorEditor(panel, floor.plan ? { ...floor.plan, published: false } : null, { ...options, hideDesigner: true, onChange(plan) {
+      child = singleFloorEditor(panel, floor.plan ? { ...floor.plan, published: false } : null, { ...options, onChange(plan) {
         if (mounting) return;
         building.floors[floorIndex].plan = plan ? { ...plan, published: false } : null;
-        designer?.sync();
         clearTimeout(timer); timer = setTimeout(showPreview, 180);
       } });
       // Publication belongs to the building; removal still applies to this floor.
@@ -69,19 +67,6 @@
     };
     root.querySelectorAll('[data-position]').forEach(input => input.onchange = () => { try { capture(); showPreview(); report(); } catch (error) { report(error); } });
     mount();
-    if (window.FloorPlanDesign) {
-      const designRoot = root.querySelector('[data-building-designer]'); designRoot.hidden = false;
-      root.querySelector('[data-building-design]').hidden = false;
-      designer = window.FloorPlanDesign.createControls(designRoot, {
-        getModel() { capture(); return building; }, peekModel: () => building,
-        applyModel(next) { building = G.validate(next); count.value = building.floors.length; mount(); report(); },
-        isReady: () => G.hasGeometry(building),
-        onBusy(value) {
-          designing = value; root.querySelector('[data-floor-host]').inert = value;
-          root.querySelectorAll('[data-floor-count],[data-edit-floor],[data-position],[data-building-published]').forEach(control => { control.disabled = value; });
-        }
-      });
-    }
     return { getValue() {
       capture();
       if (building.floors.length === 1 && !building.floors[0].plan && !publish.checked) return null;

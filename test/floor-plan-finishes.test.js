@@ -6,6 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const G = require('../public/floor-plan-geometry');
 const F = require('../public/floor-plan-finishes');
+const P = require('../public/floor-plan-paint');
+const catalogue = require('../public/asian-paints-shades.json');
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB9kAAAAASUVORK5CYII=';
 const plan = () => ({version:1,image,width:30,depth:40,height:10,thickness:.5,walls:[{kind:'wall',a:[.1,.1],b:[.9,.1]}]});
 const custom = {...F.DEFAULTS.wall,pattern:'custom',color:'#ffffff',texture:image,scale:2.5,rotation:45};
@@ -59,7 +61,8 @@ test('saved finishes round-trip through private and public project APIs without 
   const login=await fetch(base+'/api/login',{method:'POST',body:JSON.stringify({password:'finish-test'})});
   const cookie=login.headers.get('set-cookie').split(';')[0];
   const call=(url,method='GET',body)=>fetch(base+url,{method,headers:{cookie,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
-  const finishes={wall:custom,floor:F.PRESETS.floor[15].finish,ceiling:F.PRESETS.ceiling[6].finish};
+  const painted=P.applyPaint(P.applyPaint(plan(),'wall',P.resolve(catalogue,'Buttercup')),'exterior',P.resolve(catalogue,'Apricot'));
+  const finishes={...painted.finishes,floor:F.PRESETS.floor[15].finish,ceiling:F.PRESETS.ceiling[6].finish};
   const first=await call('/api/admin/models','POST',{title:'Finish test',floorPlan:{...plan(),finishes,published:false}});
   assert.equal(first.status,201);const {model}=await first.json();
   assert.deepEqual(model.floorPlan.finishes,finishes);
@@ -72,4 +75,5 @@ test('saved finishes round-trip through private and public project APIs without 
   const saved=(await(await call('/api/admin/data')).json()).models;
   assert.equal(saved.find(m=>m.id===secondId).floorPlan.finishes,undefined);
   assert.deepEqual(saved.find(m=>m.id===model.id).floorPlan.finishes,finishes);
+  assert.equal((await call('/api/admin/design-surprise')).status,404,'retired generator endpoint is unavailable');
 });
