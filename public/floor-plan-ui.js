@@ -14,7 +14,7 @@
   function loadRenderer() {
     if (window.FloorPlanRenderer) return Promise.resolve();
     if (!rendererPromise) rendererPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=13';
+      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=14';
       script.onload = resolve;
       script.onerror = () => { script.remove(); rendererPromise = null; reject(new Error('The 3D viewer could not load. Check your connection and choose Retry.')); };
       document.head.append(script);
@@ -55,7 +55,7 @@
         <button type="button" class="btn btn-outline btn-small" data-view="in" aria-label="Zoom in">+</button><button type="button" class="btn btn-outline btn-small" data-view="out" aria-label="Zoom out">−</button>
         <button type="button" class="btn btn-outline btn-small" data-view="top">Top view</button><button type="button" class="btn btn-outline btn-small" data-view="reset">Reset view</button>
         <button type="button" class="btn btn-outline btn-small" data-view="expand" aria-pressed="false">Expand 3D view</button>
-        <button type="button" class="btn btn-outline btn-small" data-view="walls" aria-pressed="false">Show full walls</button>
+        <button type="button" class="btn btn-outline btn-small" data-view="walls" aria-pressed="true">Show cutaway walls</button>
         <button type="button" class="btn btn-outline btn-small" data-view="ceiling" aria-pressed="false">Show ceiling</button>
         <button type="button" class="btn btn-outline btn-small" data-view="ceiling-view">Ceiling view</button>
         <button type="button" class="btn btn-outline btn-small" data-view="png">Save image</button>

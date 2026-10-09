@@ -72,6 +72,16 @@ async function run() {
     await viewer.locator('canvas[data-engine="three"]').waitFor(); await viewer.scrollIntoViewIfNeeded();
     await wait(() => window.__walkViewer.getStats().renderCount > 0);
     const overview = await stats();
+    assert.equal(overview.fullWalls, true, 'public viewer starts with full walls');
+    const wallsButton = viewer.locator('[data-view="walls"]');
+    assert.equal(await wallsButton.textContent(), 'Show cutaway walls');
+    assert.equal(await wallsButton.getAttribute('aria-pressed'), 'true');
+    await wallsButton.click();
+    assert.equal((await stats()).fullWalls, false, 'cutaway remains available');
+    assert.equal(await wallsButton.textContent(), 'Show full walls');
+    await wallsButton.click();
+    assert.equal((await stats()).fullWalls, true);
+    checks.push('full walls by default with an optional cutaway toggle');
     await page.waitForTimeout(250); const settled = (await stats()).renderCount;
     await page.waitForTimeout(350); assert.equal((await stats()).renderCount, settled, 'overview stops rendering when idle');
     checks.push('public overview renders and sleeps when idle');
@@ -81,7 +91,7 @@ async function run() {
     const groundStart = (await stats()).cameraPosition;
     assert.ok(Math.abs(groundStart[0]) > .7, 'walkthrough starts in a clear room, away from the central doorway');
     assert.equal(await viewer.getByLabel('View floor').inputValue(), '0');
-    assert.equal(await viewer.getByRole('button', { name: 'Show full walls', exact: true }).isEnabled(), false);
+    assert.equal(await wallsButton.isEnabled(), false);
     assert.equal(await viewer.getByRole('group', { name: 'Walkthrough movement' }).isVisible(), true);
     await holdUntil('d', () => window.__walkViewer.getStats().cameraPosition[0] > .6);
     checks.push('keyboard movement crosses the doorway at eye level');
@@ -101,6 +111,7 @@ async function run() {
     await page.keyboard.press('Escape'); assert.equal(await page.locator('.fp-view-expanded').count(), 0);
     assert.ok((await stats()).cameraPosition.every((value,i)=>Math.abs(value-overview.cameraPosition[i])<1e-9),
       'overview camera position is restored within floating-point precision');
+    assert.equal((await stats()).fullWalls, true, 'exit walkthrough restores full walls');
     checks.push('drag look, resize, expansion, Escape and overview restoration');
     await viewer.getByRole('button', { name: 'Walk through', exact: true }).click();
     await holdUntil('w', () => window.__walkViewer.getStats().cameraPosition[2] < -2);
@@ -146,6 +157,7 @@ async function run() {
     await page.setViewportSize({ width: 1440, height: 1080 });
     for (const route of ['/listing/' + listing.id, '/project/' + project.id]) {
       await page.goto(base + route); await viewer.locator('canvas[data-engine="three"]').waitFor();
+      assert.equal((await stats()).fullWalls, true, 'listing and portfolio viewers start with full walls');
       await viewer.getByRole('button', { name: 'Walk through', exact: true }).click();
       await wait(() => window.__walkViewer.getStats().walking);
     }

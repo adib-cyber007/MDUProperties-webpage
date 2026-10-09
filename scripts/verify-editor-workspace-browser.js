@@ -52,6 +52,7 @@ async function run() {
     const tab = name => floorTabs().getByRole('tab', { name, exact: true });
     const preview = () => page.locator('.fp-preview-panel');
     await preview().locator('canvas[data-engine="three"]').waitFor();
+    assert.equal(await preview().locator('[data-view="walls"]').getAttribute('aria-pressed'), 'true', 'editor preview starts with full walls');
     assert.equal(await outerTabs().getByRole('tab', { name: 'Floor plan & 3D', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('.fp-source-settings').getAttribute('open'), null);
     assert.equal(await page.locator('.building-alignment').getAttribute('open'), null);
@@ -59,6 +60,7 @@ async function run() {
     assert.equal(await page.locator('[data-building-viewer] canvas').count(), 0, 'hidden combined preview does not build a second model');
     await page.locator('.building-preview > summary').click();
     await page.locator('[data-building-viewer] canvas[data-engine="three"]').waitFor();
+    assert.equal(await page.locator('[data-building-viewer] [data-view="walls"]').getAttribute('aria-pressed'), 'true', 'combined building preview starts with full walls');
     await page.locator('.building-preview > summary').click();
     const boxes = await Promise.all([page.locator('.fp-editor-main').boundingBox(), preview().boundingBox()]);
     assert.ok(boxes[1].x > boxes[0].x + boxes[0].width, 'desktop shows tools and preview side by side');

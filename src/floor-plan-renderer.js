@@ -31,7 +31,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   controls.enableDamping = true; controls.dampingFactor = .12;
   controls.maxPolarAngle = Math.PI * .49; controls.minDistance = .7; controls.maxDistance = 200;
   const materials = new Map(), geometries = new Set(), textures = new Set();
-  let plan = null, fingerprint = '', fullWalls = false, showCeiling = false, ceilingView = false, quality = 'auto', frame = 0, visible = true, disposed = false, lost = false;
+  let plan = null, fingerprint = '', fullWalls = true, showCeiling = false, ceilingView = false, quality = 'auto', frame = 0, visible = true, disposed = false, lost = false;
   let textureJobs = [];
   let fitted = false, cameraInteracted = false, renderCount = 0, buildCount = 0, picks = [], pointerStart = null, visibleFloor = 'all', dimensionFingerprint = '';
   let walking = false, walkFloor = null, collision = null, walkYaw = 0, walkPitch = 0, lastFrame = 0, savedOverview = null;
