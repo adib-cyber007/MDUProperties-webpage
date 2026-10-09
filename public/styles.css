@@ -936,3 +936,8 @@ button[aria-busy="true"] { display: inline-flex; align-items: center; justify-co
   .workspace-disclosure > summary { padding: 12px; }
   .workspace-disclosure > :not(summary) { margin-left: 12px; margin-right: 12px; }
 }
+
+/* Server-rendered page summary shown until the app loads (and to search engines). */
+.seo-prerender { max-width: 960px; margin: 0 auto; padding: 96px 24px 48px; line-height: 1.6; }
+.seo-prerender nav { margin-bottom: 24px; font-size: 0.9rem; }
+.seo-prerender ul { padding-left: 1.2rem; }

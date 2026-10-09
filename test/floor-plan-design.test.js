@@ -102,7 +102,7 @@ test('AI failures, refusals, truncation and unsafe designs leave the existing mo
 
 test('the designer endpoint requires owner access and does not save or publish a generated design',async t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mdu-design-'));fs.mkdirSync(path.join(dir,'public'));
-  for(const file of ['server.js','telegram-bot.js','floor-plan-ai.js','public/floor-plan-design.js','public/floor-plan-geometry.js','public/floor-plan-finishes.js'])fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
+  for(const file of ['server.js', 'seo.js', 'public/page-seo.js','telegram-bot.js','floor-plan-ai.js','public/floor-plan-design.js','public/floor-plan-geometry.js','public/floor-plan-finishes.js'])fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
   const keys=['ADMIN_PASSWORD','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','VERCEL','OPENAI_API_KEY','AI_DESIGN_API_KEY'];const env=Object.fromEntries(keys.map(k=>[k,process.env[k]]));keys.forEach(k=>delete process.env[k]);process.env.ADMIN_PASSWORD='design-test';
   const server=require(path.join(dir,'server.js'));await new Promise(r=>server.listen(0,'127.0.0.1',r));
   t.after(async()=>{await new Promise(r=>server.close(r));keys.forEach(k=>env[k]===undefined?delete process.env[k]:process.env[k]=env[k]);fs.rmSync(dir,{recursive:true,force:true});});

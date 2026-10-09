@@ -12,7 +12,7 @@ const work = path.join(root, 'work'); fs.mkdirSync(work, { recursive: true });
 const dir = fs.mkdtempSync(path.join(work, 'browser-test-'));
 if (!fs.existsSync(fixture)) throw new Error('Pass a PNG/JPEG/WebP floor plan to this test. See services/floorplan/README.md.');
 fs.cpSync(path.join(root, 'public'), path.join(dir, 'public'), { recursive: true });
-for (const file of ['server.js', 'telegram-bot.js', 'floor-plan-recognition.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
+for (const file of ['server.js', 'seo.js', 'telegram-bot.js', 'floor-plan-recognition.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
 for (const key of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','VERCEL','TELEGRAM_BOT_TOKEN','AI_DESIGN_API_KEY','OPENAI_API_KEY']) delete process.env[key];
 process.env.ADMIN_PASSWORD = 'floorplan-browser-test';
 process.env.FLOORPLAN_RECOGNITION_URL ||= 'http://127.0.0.1:8765';

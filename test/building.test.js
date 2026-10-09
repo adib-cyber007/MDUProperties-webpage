@@ -40,7 +40,7 @@ test('incomplete floors can be saved privately but cannot be published', () => {
 test('buildings persist and remain isolated/private for listings, portfolio and standalone models', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mdu-building-test-'));
   fs.mkdirSync(path.join(dir, 'public'));
-  for (const file of ['server.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
+  for (const file of ['server.js', 'seo.js', 'public/page-seo.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
   for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL', 'TELEGRAM_BOT_TOKEN']) delete process.env[key];
   process.env.ADMIN_PASSWORD = 'building-test';
   const server = require(path.join(dir, 'server.js'));

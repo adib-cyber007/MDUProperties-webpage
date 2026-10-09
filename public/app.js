@@ -741,8 +741,13 @@ async function renderRoute() {
     else if (path === '/admin') await renderAdmin();
     else renderNotFound();
     renderChrome();
+    PageSEO.update(location.pathname, state);
   } catch (error) {
-    main.innerHTML = `<section class="not-found"><div><span class="eyebrow">Connection problem</span><h1>Couldn’t load.</h1><p class="muted">${escapeHtml(error.message)}</p><button class="btn" type="button" id="retry">Try again</button></div></section>`;
+    if (main.querySelector('.seo-prerender')) {
+      // Keep the real page readable if a crawler or an outage prevents API calls.
+      main.querySelector('.seo-connection-error')?.remove();
+      main.insertAdjacentHTML('beforeend', `<section class="seo-prerender seo-connection-error" role="status"><p>Interactive features are temporarily unavailable. The project details above remain available.</p><button class="btn" type="button" id="retry">Try again</button></section>`);
+    } else main.innerHTML = `<section class="not-found"><div><span class="eyebrow">Connection problem</span><h1>Couldn’t load.</h1><p class="muted">${escapeHtml(error.message)}</p><button class="btn" type="button" id="retry">Try again</button></div></section>`;
     document.querySelector('#retry')?.addEventListener('click', () => { state.settings = null; renderRoute(); });
   }
 }

@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..'), work = path.join(root, 'work');
 fs.mkdirSync(work, { recursive: true });
 const dir = fs.mkdtempSync(path.join(work, 'walkthrough-test-'));
 fs.cpSync(path.join(root, 'public'), path.join(dir, 'public'), { recursive: true });
-for (const file of ['server.js', 'telegram-bot.js', 'floor-plan-recognition.js', 'floor-plan-ai.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
+for (const file of ['server.js', 'seo.js', 'telegram-bot.js', 'floor-plan-recognition.js', 'floor-plan-ai.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
 for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL', 'TELEGRAM_BOT_TOKEN', 'AI_DESIGN_API_KEY', 'OPENAI_API_KEY', 'FLOORPLAN_RECOGNITION_URL']) delete process.env[key];
 process.env.NODE_ENV = 'production'; process.env.ADMIN_PASSWORD = 'walkthrough-browser-test';
 const server = require(path.join(dir, 'server.js'));
