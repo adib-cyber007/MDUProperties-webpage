@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { createTelegramBot, parseTelegramOwnerIds } = require('./telegram-bot');
 const { validate: validateFloorPlan } = require('./public/floor-plan-geometry');
+const seo = require('./seo');
 
 const PORT = Number(process.env.PORT || 43821);
 const PRODUCTION = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
@@ -873,10 +874,48 @@ function serveStatic(req, res, url) {
   fs.createReadStream(file).pipe(res);
 }
 
+// Pages, robots.txt and sitemap.xml are rendered with real listing data so search
+// engines and link previews see titles, descriptions and content without running JS.
+function seoRoute(pathname) {
+  return pathname === '/robots.txt' || pathname === '/sitemap.xml' || pathname.startsWith('/media/') || pathname === '/index.html' || !path.extname(pathname);
+}
+
+function sendText(req, res, status, type, body, cache) {
+  res.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), 'Cache-Control': cache, ...securityHeaders() });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+async function serveSeo(req, res, url) {
+  const origin = seo.siteOrigin(req);
+  if (url.pathname === '/robots.txt') return sendText(req, res, 200, 'text/plain; charset=utf-8', seo.robotsTxt(origin), 'public, max-age=3600');
+  let store;
+  try {
+    const full = await readStore();
+    store = { ...full, models: (full.models || []).filter(publishedModel) };
+  } catch (error) {
+    console.error(error);
+    if (url.pathname === '/sitemap.xml') return sendJson(res, 503, { error: 'Sitemap temporarily unavailable.' });
+    return serveStatic(req, res, url);
+  }
+  if (url.pathname.startsWith('/media/')) {
+    const media = seo.decodeMedia(store, url.pathname);
+    if (!media) return sendJson(res, 404, { error: 'Image not found.' });
+    res.writeHead(200, { 'Content-Type': media.type, 'Content-Length': media.body.length, 'Cache-Control': 'public, max-age=86400', ...securityHeaders() });
+    return res.end(req.method === 'HEAD' ? undefined : media.body);
+  }
+  if (url.pathname === '/sitemap.xml') return sendText(req, res, 200, 'application/xml; charset=utf-8', seo.sitemapXml(store, origin), 'public, max-age=3600');
+  const page = seo.describePage(url.pathname === '/index.html' ? '/' : url.pathname, store, origin);
+  const extra = page.robots.startsWith('noindex') ? { 'X-Robots-Tag': page.robots } : {};
+  const body = seo.renderHtml(page, origin);
+  res.writeHead(page.status, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache', ...securityHeaders(), ...extra });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 async function requestHandler(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
+    else if (['GET', 'HEAD'].includes(req.method) && seoRoute(url.pathname)) await serveSeo(req, res, url);
     else if (['GET', 'HEAD'].includes(req.method)) serveStatic(req, res, url);
     else sendJson(res, 405, { error: 'Method not allowed.' });
   } catch (error) {
