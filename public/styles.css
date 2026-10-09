@@ -883,3 +883,56 @@ body:has(.admin-shell) #site-footer {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Owner editing: one task at a time, with the save action always in reach. */
+.admin-panel.owner-editor-form { padding: 24px; }
+.workspace-tabs { display: flex; gap: 4px; padding: 5px; margin-bottom: 22px; border: 1px solid #d8e0ea; border-radius: 10px; background: #f1f4f8; overflow-x: auto; }
+.workspace-tabs > button { flex: 1 0 auto; min-height: 42px; padding: 9px 16px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #526071; font-size: .86rem; font-weight: 600; cursor: pointer; }
+.workspace-tabs > button:hover { color: var(--ink); background: #e7ecf4; }
+.workspace-tabs > button[aria-selected="true"] { background: #fff; color: #2855c5; border-color: #d8e0ea; box-shadow: 0 1px 3px #182a4610; }
+.workspace-tabs > button:focus-visible, .workspace-disclosure > summary:focus-visible { outline: 3px solid var(--bronze); outline-offset: -3px; }
+.workspace-tabs > button:disabled { opacity: .5; cursor: default; }
+.owner-editor-form > .workspace-tabs { position: sticky; top: 10px; z-index: 6; }
+.owner-editor-form [role="tabpanel"][hidden] { display: none !important; }
+.owner-editor-form > [role="tabpanel"] { min-height: 280px; scroll-margin-top: 80px; }
+.owner-editor-form > [role="tabpanel"] > .form-section:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.owner-editor-form .field > label, .owner-editor-form .field > span { text-transform: none; letter-spacing: 0; font-size: .82rem; color: #445064; }
+.owner-editor-form .form-actions { margin: 28px -24px -24px; padding: 16px 24px; align-items: center; }
+.workspace-save-note { margin: 0 auto 0 0; max-width: 38ch; color: var(--muted); font-size: .78rem; }
+.badge-upcoming { color: #244d95; background: #e6efff; }
+.planning-cover { background-color: #203752; background-image: linear-gradient(#ffffff0a 1px, transparent 1px), linear-gradient(90deg, #ffffff0a 1px, transparent 1px); background-size: 32px 32px; }
+.card-image.planning-cover > img { position: absolute; left: 50%; top: 56%; width: 72px; height: 72px; object-fit: contain; transform: translate(-50%, -50%); border-radius: 12px; }
+.listing-card:hover .card-image.planning-cover > img { transform: translate(-50%, -50%); }
+.detail-hero.planning-cover { height: 300px; min-height: 300px; }
+.detail-hero.planning-cover > img { position: absolute; right: 28px; top: 28px; width: 64px; height: 64px; object-fit: contain; border-radius: 12px; }
+.upcoming-section { padding: 44px 0; background: #f3f6fb; }
+.upcoming-section .section-top p { margin-bottom: 0; color: var(--muted); max-width: 60ch; }
+.upcoming-price-note { color: #526071; font-size: .84rem; line-height: 1.6; max-width: 70ch; }
+.card-price small { display: block; color: var(--muted); font-size: .68rem; font-weight: 500; }
+.upcoming-back { display: block; margin-top: 18px; font-size: .86rem; }
+[data-upcoming-fields][hidden] { display: none !important; }
+.workspace-loading { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 50vh; padding: 24px; }
+.action-progress { display: flex; align-items: center; gap: 10px; }
+.action-progress::before, .action-spinner, button[aria-busy="true"]::before { content: ''; display: inline-block; width: 16px; height: 16px; flex: 0 0 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: action-spin .8s linear infinite; }
+button[aria-busy="true"] { display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: wait; }
+@keyframes action-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .action-progress::before, .action-spinner, button[aria-busy="true"]::before { animation: none; } }
+.workspace-disclosure { margin: 14px 0; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; }
+.workspace-disclosure > summary { padding: 14px 16px; font-size: .86rem; font-weight: 600; cursor: pointer; color: #445064; }
+.workspace-disclosure[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.workspace-disclosure > :not(summary) { margin-left: 16px; margin-right: 16px; }
+.workspace-disclosure > :last-child:not(summary) { margin-bottom: 16px; }
+@media (min-width: 1101px) {
+  .admin-shell:has(.owner-editor-form) { grid-template-columns: 210px minmax(0, 1fr); }
+  .admin-content:has(.owner-editor-form) { padding: 28px 24px 64px; }
+}
+@media (max-width: 640px) {
+  .admin-panel.owner-editor-form { padding: 14px; }
+  .workspace-tabs { margin-bottom: 18px; }
+  .workspace-tabs > button { padding-inline: 12px; font-size: .8rem; }
+  .owner-editor-form .form-actions { margin: 24px -14px -14px; padding: 12px 14px; flex-wrap: wrap; }
+  .owner-editor-form .form-actions .btn { flex: 1; }
+  .workspace-save-note { flex: 1 0 100%; font-size: .73rem; }
+  .workspace-disclosure > summary { padding: 12px; }
+  .workspace-disclosure > :not(summary) { margin-left: 12px; margin-right: 12px; }
+}

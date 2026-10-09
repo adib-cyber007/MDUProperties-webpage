@@ -63,6 +63,14 @@
         <label class="fp-quality">Rendering <select aria-label="3D rendering quality"><option value="auto">Auto</option><option value="high">High quality</option><option value="fast">Fast</option></select></label>
         <button type="button" class="btn btn-outline btn-small" data-view="retry" hidden>Retry</button>
       </div><p class="fp-view-help">Drag to orbit · Scroll or pinch to zoom · Right-drag or two-finger drag to pan. Arrow keys rotate; Home resets. Ceiling view looks upward from inside; Reset view returns to the overview. ${editable ? 'Click furniture in 3D to select it.' : ''}</p>`;
+    if (editable) {
+      const more = document.createElement('details'); more.className = 'workspace-disclosure fp-view-options';
+      more.innerHTML = '<summary>View options &amp; downloads</summary><div class="fp-view-controls"></div>';
+      const controls = more.querySelector('div');
+      for (const action of ['walls', 'ceiling', 'ceiling-view', 'png', 'glb']) controls.append(root.querySelector(`[data-view="${action}"]`));
+      controls.append(root.querySelector('.fp-quality'));
+      root.append(more);
+    }
     const canvas = root.querySelector('canvas'), notice = root.querySelector('.fp-view-notice');
     canvas.setAttribute('aria-label', `${title}. Drag to rotate, scroll to zoom, right-drag to pan. Arrow keys rotate and Home resets.`);
     let plan = initial, renderer = null, loading = false, disposed = false;
@@ -124,10 +132,12 @@
       finally { loading = false; }
     }
     async function download(type) {
+      const finish = EditorWorkspace.busy(root.querySelector(`[data-view="${type}"]`), type === 'png' ? 'Preparing image…' : 'Exporting 3D model…');
       try {
+        await EditorWorkspace.paint();
         const data = type === 'png' ? await renderer.exportPNG() : new Blob([await renderer.exportGLB()], { type: 'model/gltf-binary' });
         const url = URL.createObjectURL(data), link = document.createElement('a'); link.href = url; link.download = `floor-plan.${type}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } catch (failure) { error(failure.message); }
+      } catch (failure) { error(failure.message); } finally { finish(); }
     }
     function viewAction(action) {
       if (action === 'retry') { sync(); return; }
@@ -208,9 +218,72 @@
         </section>
         <div class="fp-publish"><label><input type="checkbox" id="fp-published"> Show this 3D layout on the project page</label><p>Save the project to keep your drawing and tracing. Leave this unchecked to save your work as a draft.</p><button class="btn btn-outline btn-small" type="button" data-action="remove">Remove floor plan</button></div>
       </div>`;
+    root.classList.add('fp-editor');
     const workspace = root.querySelector('.fp-workspace'), status = root.querySelector('.fp-status');
+    // Reuse the same controls and canvases in focused panels; no draft is remounted.
+    const source = document.createElement('details');
+    source.className = 'workspace-disclosure fp-source-settings'; source.open = !plan;
+    source.innerHTML = '<summary>Drawing source &amp; recognition</summary>';
+    while (root.firstElementChild !== status) source.append(root.firstElementChild);
+    // The status sits between the upload and recognition options in the original markup.
+    for (let node = status.nextElementSibling; node && node !== workspace;) {
+      const next = node.nextElementSibling;
+      if (!node.matches('[data-fp-designer]')) source.append(node);
+      node = next;
+    }
+    root.prepend(source);
+    const pipeline = source.querySelector('.fp-recognition-pipeline');
+    pipeline.querySelector('p').remove();
+    const recognitionOptions = document.createElement('details');
+    recognitionOptions.className = 'workspace-disclosure';
+    recognitionOptions.innerHTML = '<summary>Advanced recognition options</summary>';
+    while (pipeline.nextElementSibling) recognitionOptions.append(pipeline.nextElementSibling);
+    source.append(recognitionOptions);
+    const layout = document.createElement('div'); layout.className = 'fp-editor-layout';
+    const mainPanel = document.createElement('div'); mainPanel.className = 'fp-editor-main';
+    const setup = document.createElement('section'); setup.className = 'fp-setup-panel';
+    const tracing = root.querySelector('.fp-tracing-panel'), previewPanel = root.querySelector('.fp-preview-panel');
+    const finishes = root.querySelector('.fp-finishes'), furniture = root.querySelector('.fp-furniture-section');
+    const calibration = root.querySelector('.fp-calibration'), scaleCheck = root.querySelector('.fp-scale-check:has(#fp-scale-confirmed)');
+    const scaleNote = scaleCheck.previousElementSibling;
+    setup.append(root.querySelector('.fp-building-size'), root.querySelector('.fp-dimensions'), scaleNote, scaleCheck, calibration);
+    const drawing = document.createElement('div'); drawing.className = 'fp-drawing-panel';
+    drawing.innerHTML = '<h3>Floor-plan drawing</h3><p class="fp-note" data-active-tool>Choose a tool, then click the drawing to edit your layout.</p>';
+    const traceCanvas = tracing.querySelector('canvas');
+    const drawingTools = traceCanvas.nextElementSibling;
+    drawing.append(traceCanvas, drawingTools);
+    drawing.append(tracing.querySelector('.fp-coordinates'), tracing.querySelector('.fp-segment-label'), tracing.querySelector('#fp-segments'));
+    const traceHelp = document.createElement('details'); traceHelp.className = 'workspace-disclosure';
+    traceHelp.innerHTML = '<summary>How to edit the drawing</summary>';
+    traceHelp.append(tracing.querySelector('.fp-trace-help')); tracing.append(traceHelp);
+    mainPanel.append(setup, tracing, finishes, furniture, drawing);
+    layout.append(mainPanel, previewPanel);
+    root.querySelector('.fp-panels').remove();
+    workspace.prepend(layout);
+    const editorTabs = EditorWorkspace.tabs(mainPanel, [
+      { key: 'setup', title: 'Drawing & scale', panel: setup },
+      { key: 'layout', title: 'Walls & openings', panel: tracing },
+      { key: 'finishes', title: 'Finishes', panel: finishes },
+      { key: 'furniture', title: 'Furniture', panel: furniture }
+    ], { label: 'Floor editor tools', initial: plan?.scaleConfirmed === false ? 'setup' : 'layout', onSelect(key) {
+      if (key === 'finishes' || key === 'furniture' || (key === 'layout' && ['scale', 'furniture'].includes(tool))) {
+        tool = 'select'; pending = cursor = null;
+        root.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === tool)));
+      }
+      requestAnimationFrame(() => { if (root.isConnected) { root.querySelector('[data-active-tool]').textContent = toolHint(); draw(); } });
+    } });
+    const exports = document.createElement('details'); exports.className = 'workspace-disclosure fp-exports';
+    exports.innerHTML = '<summary>Export this floor</summary><div class="fp-tools"></div>';
+    exports.querySelector('div').append(root.querySelector('[data-action="export"]'), root.querySelector('[data-action="export-json"]'));
+    previewPanel.append(exports);
+    const finishOptions = document.createElement('details'); finishOptions.className = 'workspace-disclosure';
+    finishOptions.innerHTML = '<summary>Wall faces &amp; protected finishes</summary>';
+    finishOptions.append(finishes.querySelector('.fp-wall-sides'), finishes.querySelector('.fp-finish-locks'), finishes.querySelector('[data-finish-lock-note]'));
+    finishes.append(finishOptions);
+    const localDesigner = root.querySelector('[data-fp-designer]');
+    finishes.prepend(localDesigner);
     const canvas = root.querySelector('.fp-trace-canvas'), ctx = canvas.getContext('2d');
-    const viewer = createViewer(root.querySelector('[data-fp-viewer]'), plan, '3D floor-plan preview', { editable: true, onSelectFurniture(index) { selectedFurniture = index; selected = -1; refresh(); } });
+    const viewer = createViewer(root.querySelector('[data-fp-viewer]'), plan, '3D floor-plan preview', { editable: true, onSelectFurniture(index) { editorTabs.select('furniture'); selectedFurniture = index; selected = -1; refresh(); } });
     const say = (message, error = false) => { status.textContent = message; status.classList.toggle('error-message', error); };
     const recognitionStatus = fetch('/api/admin/floor-plan-recognition', { signal: AbortSignal.timeout(3500) })
       .then(async response => { if (!response.ok) return; const state = await response.json(); recognitionReady = state.ready === true; root.dataset.recognitionEngine=state.engine;
@@ -335,10 +408,17 @@
         row.append(description,select,add,dismiss); list.append(row);
       });
     }
+    let hadPlan = !!plan;
+    function toolHint() {
+      return tool === 'scale' ? 'Set scale: click the two endpoints of your known measurement.' : tool === 'furniture' ? 'Place furniture: click where the selected item should go.' : tool === 'select' ? 'Select: click a wall, opening or furniture item to edit it.' : `${tool === 'wall' ? 'Wall' : tool === 'door' ? 'Doorway' : 'Window'}: click two endpoints to add a segment.`;
+    }
     function syncControls() {
       root.querySelector('#fp-recognition-method').disabled = !!analysis || designing;
       root.querySelector('[data-vision-enabled]').disabled = root.dataset.visionConfigured!=='true' || !!analysis || designing;
       workspace.hidden = !plan;
+      if (plan && !hadPlan) { source.open = false; editorTabs.select(plan.scaleConfirmed === false ? 'setup' : 'layout'); }
+      hadPlan = !!plan;
+      root.querySelector('[data-active-tool]').textContent = toolHint();
       workspace.querySelectorAll('input, select, button').forEach(control => { control.disabled = !plan; });
       root.querySelectorAll('.fp-dimensions input').forEach(input => { input.disabled = !plan; if (plan) input.value = plan[input.id.slice(3)]; });
       root.querySelector('#fp-published').checked = plan?.published || false;
@@ -672,6 +752,7 @@
       refresh();
       if (tool === 'scale') say('Click the first endpoint of the known measurement, then its other endpoint.');
       if (tool === 'furniture') say('Click the drawing where you want to place the selected item.');
+      if (tool === 'scale' || tool === 'furniture') canvas.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     });
     function point(e) {
       const rect = canvas.getBoundingClientRect();
@@ -738,7 +819,7 @@
     root.querySelector('#fp-items').onchange = e => { selectedFurniture=Number(e.target.value); selected=-1; refresh(); };
     root.querySelector('#fp-published').onchange = e => { if (plan) plan.published = e.target.checked; };
     root.querySelector('#fp-scale-confirmed').onchange = e => { if (plan) plan.scaleConfirmed = e.target.checked; };
-    root.querySelectorAll('[data-action]').forEach(button => button.onclick = () => {
+    root.querySelectorAll('[data-action]').forEach(button => button.onclick = async () => {
       const action = button.dataset.action;
       if (action === 'building-size' || action === 'large-scale') {
         try {
@@ -781,12 +862,14 @@
         saveSegment({ kind: root.querySelector('#fp-kind').value, a: [n[0] / plan.width, n[1] / plan.depth], b: [n[2] / plan.width, n[3] / plan.depth] }, action === 'update' ? selected : -1);
       }
       if (action === 'export' || action === 'export-json') {
+        const finish = EditorWorkspace.busy(button, 'Preparing download…');
         try {
+          await EditorWorkspace.paint();
           const checked = validateDraft(); if (!checked?.walls.length) return;
           const json = action === 'export-json';
           const url = URL.createObjectURL(new Blob([json ? JSON.stringify(checked, null, 2) : G.toOBJ(checked)], { type: json ? 'application/json' : 'text/plain' }));
           const link = document.createElement('a'); link.href = url; link.download = json ? 'floor-plan-layout.json' : 'floor-plan-layout.obj'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch (error) { say(error.message, true); }
+        } catch (error) { say(error.message, true); } finally { finish(); }
       }
     });
     const resize = new ResizeObserver(draw); resize.observe(canvas);

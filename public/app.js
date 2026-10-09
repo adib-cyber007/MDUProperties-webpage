@@ -113,7 +113,8 @@ function renderChrome() {
     <button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
     <nav class="site-nav" aria-label="Main navigation">
       <a href="/" data-link class="${location.pathname === '/' ? 'active' : ''}">Home</a>
-      <a href="/listings" data-link class="${location.pathname.startsWith('/listing') ? 'active' : ''}">Available homes</a>
+      <a href="/listings" data-link class="${location.pathname.startsWith('/listing') && state.currentListing?.status !== 'upcoming' ? 'active' : ''}">Available homes</a>
+      <a href="/upcoming-projects" data-link class="${location.pathname === '/upcoming-projects' || state.currentListing?.status === 'upcoming' ? 'active' : ''}">Upcoming projects</a>
       <a href="/portfolio" data-link class="${location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/project/') ? 'active' : ''}">Previous projects</a>
       ${state.models?.length ? `<a href="/3d-projects" data-link class="${location.pathname.startsWith('/3d-project') ? 'active' : ''}">3D Projects</a>` : ''}
       ${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}
@@ -125,7 +126,7 @@ function renderChrome() {
   footer.innerHTML = `<div class="container">
     <div class="footer-grid">
       <div>${brandMarkup()}<p>Newly built homes, planned and delivered with care. Every listing is managed directly by our team.</p></div>
-      <div class="footer-column"><h3>Explore</h3><a href="/listings" data-link>Available homes</a><a href="/portfolio" data-link>Previous projects</a><a href="/#approach" data-scroll>Our approach</a><a href="/admin" data-link>Owner sign in</a></div>
+      <div class="footer-column"><h3>Explore</h3><a href="/listings" data-link>Available homes</a><a href="/upcoming-projects" data-link>Upcoming projects</a><a href="/portfolio" data-link>Previous projects</a><a href="/#approach" data-scroll>Our approach</a><a href="/admin" data-link>Owner sign in</a></div>
       <div class="footer-column"><h3>Contact</h3>${state.settings.phone ? `<a href="${phoneHref(state.settings.phone)}">${escapeHtml(state.settings.phone)}</a>` : ''}${state.settings.email ? `<a href="mailto:${escapeHtml(state.settings.email)}">${escapeHtml(state.settings.email)}</a>` : ''}${state.settings.whatsapp ? `<a href="${whatsappHref(state.currentListing?.title)}" target="_blank" rel="noreferrer">WhatsApp us</a>` : ''}${state.settings.instagram ? `<a href="${escapeHtml(state.settings.instagram)}" target="_blank" rel="noreferrer">Instagram</a>` : ''}${state.settings.officeAddress ? `<address>${escapeHtml(state.settings.officeAddress)}</address>` : ''}</div>
     </div>
     <div class="footer-bottom"><span>© ${new Date().getFullYear()} ${escapeHtml(state.settings.brandName)}.</span><span>Owner-managed · Direct enquiries</span></div>
@@ -142,7 +143,7 @@ function renderChrome() {
 }
 
 function badges(listing) {
-  const items = [listing.status === 'ready'
+  const items = [listing.status === 'upcoming' ? '<span class="badge badge-upcoming">Upcoming project</span>' : listing.status === 'ready'
     ? '<span class="badge badge-ready">Ready for sale</span>'
     : '<span class="badge badge-building">Under construction</span>'];
   if (listing.trustBadge === 'verified') items.push('<span class="badge badge-trust">Verified listing</span>');
@@ -154,15 +155,16 @@ function badges(listing) {
 }
 
 function listingCard(listing) {
+  const planningCover = listing.status === 'upcoming' && listing.mainImage === '/mark.svg?v=3';
   return `<article class="listing-card reveal">
-    <a class="card-image" href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View ${escapeHtml(listing.title)}">
-      <img src="${escapeHtml(listing.mainImage)}" alt="Exterior of ${escapeHtml(listing.title)} in ${escapeHtml(listing.location)}" width="800" height="650" loading="lazy">
+    <a class="card-image${planningCover ? ' planning-cover' : ''}" href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View ${escapeHtml(listing.title)}">
+      <img src="${escapeHtml(listing.mainImage)}" alt="${planningCover ? '' : `Exterior of ${escapeHtml(listing.title)} in ${escapeHtml(listing.location)}`}" width="800" height="650" loading="lazy">
       <div class="card-badges">${badges(listing)}</div>
     </a>
     <div class="card-body">
       <p class="card-location">${escapeHtml(listing.location)}</p>
-      <div class="card-title-row"><h3 class="card-title"><a href="/listing/${encodeURIComponent(listing.id)}" data-link>${escapeHtml(listing.title)}</a></h3><p class="card-price">${formatPrice(listing.price)}</p></div>
-      <div class="card-meta"><span>${escapeHtml(listing.area)}</span><span>${listing.status === 'ready' ? 'Available now' : 'Build in progress'}</span><a href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View details for ${escapeHtml(listing.title)}">View details ${icon('arrow')}</a></div>
+      <div class="card-title-row"><h3 class="card-title"><a href="/listing/${encodeURIComponent(listing.id)}" data-link>${escapeHtml(listing.title)}</a></h3><p class="card-price">${listing.status === 'upcoming' ? '<small>Estimated</small> ' : ''}${formatPrice(listing.price)}</p></div>
+      <div class="card-meta"><span>${escapeHtml(listing.area)}</span><span>${listing.status === 'upcoming' ? escapeHtml(listing.expectedCompletion || 'In planning') : listing.status === 'ready' ? 'Available now' : 'Build in progress'}</span><a href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View details for ${escapeHtml(listing.title)}">View details ${icon('arrow')}</a></div>
     </div>
   </article>`;
 }
@@ -221,9 +223,10 @@ function renderProject(id) {
 
 function renderHome() {
   state.currentListing = null;
-  const selectedFeatured = state.listings.filter(item => item.featured);
-  const featured = (selectedFeatured.length ? selectedFeatured : state.listings).slice(0, 3);
-  const heroListings = [...featured, ...state.listings.filter(item => !featured.some(featuredItem => featuredItem.id === item.id))].slice(0, 3);
+  const available = state.listings.filter(item => item.status !== 'upcoming');
+  const selectedFeatured = available.filter(item => item.featured);
+  const featured = (selectedFeatured.length ? selectedFeatured : available).slice(0, 3);
+  const heroListings = [...featured, ...available.filter(item => !featured.some(featuredItem => featuredItem.id === item.id))].slice(0, 3);
   const portfolioPreview = state.projects.filter(item => item.featured).sort((a, b) => Number(b.highProfile) - Number(a.highProfile) || Number(b.completedYear) - Number(a.completedYear)).slice(0, 2);
   const heroVisual = heroListings.length ? `<div class="hero-visual hero-rotator" data-hero-rotator role="group" aria-label="Featured available homes">
       ${heroListings.map((listing, index) => `<a class="hero-slide ${index === 0 ? 'is-active' : ''}" href="/listing/${encodeURIComponent(listing.id)}" data-link aria-label="View ${escapeHtml(listing.title)}" aria-hidden="${index !== 0}" tabindex="${index === 0 ? '0' : '-1'}">
@@ -254,6 +257,7 @@ function renderHome() {
     <div class="section-top"><div><span class="eyebrow">Available now</span><h2 class="section-heading small">A small, considered collection.</h2></div><a class="btn btn-outline" href="/listings" data-link>See all homes ${icon('arrow')}</a></div>
     <div class="listing-grid">${featured.length ? featured.map(listingCard).join('') : '<div class="empty-state"><h2>New homes are being prepared.</h2><p>Contact the owner directly to hear about upcoming availability.</p></div>'}</div>
   </div></section>
+  ${upcomingHomeMarkup()}
   <section class="home-portfolio" aria-labelledby="builder-portfolio-title"><div class="container builder-showcase"><div class="builder-showcase-copy"><span class="builder-verified"><span aria-hidden="true">✓</span> Verified builder</span><h2 id="builder-portfolio-title">See the work behind the homes.</h2><p>Our team manages every listing directly. Explore previous homes we have completed and sold to get a sense of our planning, construction, and finish.</p><a class="btn btn-outline" href="/portfolio" data-link>View previous projects ${icon('arrow')}</a></div><div class="builder-projects">${portfolioPreview.length ? portfolioPreview.map(builderProjectCard).join('') : '<div class="builder-projects-empty"><img src="/mark.svg?v=3" alt="" width="56" height="56"><strong>Our completed work</strong><p>Project photographs and stories will appear here as they are added.</p></div>'}</div></div></section>
   <section id="approach" class="philosophy"><div class="container philosophy-grid">
     <div><span class="eyebrow">How we build</span><h2>Quiet choices. Enduring homes.</h2></div>
@@ -301,7 +305,7 @@ function renderListings() {
   state.currentListing = null;
   document.title = `Available homes — ${state.settings.brandName}`;
   setMeta('Browse owner-managed homes. Filter by build status, neighbourhood, and price.');
-  const locations = [...new Set(state.listings.map(item => item.location))].sort();
+  const locations = [...new Set(state.listings.filter(item => item.status !== 'upcoming').map(item => item.location))].sort();
   main.innerHTML = `<section class="page-hero"><div class="container"><span class="eyebrow">The collection</span><h1>Find a home that fits.</h1><p>Every property here is managed directly by our team. Filter the collection, then call or message us for plans, specifications, and a visit.</p></div></section>
   <section class="filter-bar" aria-label="Listing filters"><form class="container filters" id="filter-form">
     <div class="field compact"><label for="filter-status">Build status</label><select id="filter-status" name="status"><option value="all">All homes</option><option value="ready">Ready for sale</option><option value="construction">Under construction</option></select></div>
@@ -326,7 +330,7 @@ function renderListings() {
 }
 
 function drawFilteredListings() {
-  let results = [...state.listings];
+  let results = state.listings.filter(item => item.status !== 'upcoming');
   const { status, location, price, sort } = state.filters;
   if (status !== 'all') results = results.filter(item => item.status === status);
   if (location !== 'all') results = results.filter(item => item.location === location);
@@ -343,6 +347,8 @@ function renderListing(id) {
   const listing = state.listings.find(item => item.id === id);
   if (!listing) return renderNotFound();
   state.currentListing = listing;
+  const upcoming = listing.status === 'upcoming';
+  const planningCover = upcoming && listing.mainImage === '/mark.svg?v=3';
   document.title = `${listing.title} — ${state.settings.brandName}`;
   const plainDescription = listing.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   setMeta(`${listing.title} in ${listing.location}. ${plainDescription.slice(0, 120)}`);
@@ -351,12 +357,13 @@ function renderListing(id) {
   const timelineMarkup = listing.status === 'construction' && listing.progress?.length ? `<section class="timeline-section"><div class="container"><span class="eyebrow">Dated from site</span><h2>Construction progress</h2><p class="timeline-intro">A visible record of how the home is taking shape. Contact us for the current programme or a supervised site visit.</p><div class="timeline" style="--count:${listing.progress.length}">${listing.progress.map(item => `<article class="timeline-item"><img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.stage)} construction progress" loading="lazy"><time datetime="${escapeHtml(item.date)}">${formatDate(item.date)}</time><h3>${escapeHtml(item.stage)}</h3></article>`).join('')}</div></div></section>` : '';
   const mapMarkup = listing.mapPin ? `<section class="map-section" aria-label="Map showing ${escapeHtml(listing.address || listing.location)}"><iframe title="Map of ${escapeHtml(listing.address || listing.location)}" loading="lazy" src="https://www.google.com/maps?q=${encodeURIComponent(listing.mapPin)}&output=embed" referrerpolicy="no-referrer-when-downgrade"></iframe></section>` : '';
   main.innerHTML = `<article>
-    <header class="detail-hero"><img src="${escapeHtml(listing.mainImage)}" alt="Exterior of ${escapeHtml(listing.title)} in ${escapeHtml(listing.location)}" width="1800" height="1100"><div class="detail-hero-content"><div class="card-badges">${badges(listing)}</div><h1>${escapeHtml(listing.title)}</h1><p class="detail-hero-place">${escapeHtml(listing.address || listing.location)}</p></div></header>
-    <section class="container detail-summary"><div><div class="detail-facts"><div class="detail-fact"><span>Asking price</span><strong>${formatPrice(listing.price)}</strong></div><div class="detail-fact"><span>Built area</span><strong>${escapeHtml(listing.area)}</strong></div><div class="detail-fact"><span>Availability</span><strong>${listing.status === 'ready' ? 'Ready now' : 'In progress'}</strong></div></div><span class="eyebrow">About this home</span><div class="prose">${listing.description}</div></div>
-      <aside class="detail-aside"><span class="detail-aside-label">Direct owner contact</span><h2>See it first-hand.</h2><p>Ask for the floor plan, full specification, or arrange a visit directly with our team.</p>${contactButtons(listing.title)}</aside>
+    <header class="detail-hero${planningCover ? ' planning-cover' : ''}"><img src="${escapeHtml(listing.mainImage)}" alt="${planningCover ? '' : `Exterior of ${escapeHtml(listing.title)} in ${escapeHtml(listing.location)}`}" width="1800" height="1100"><div class="detail-hero-content"><div class="card-badges">${badges(listing)}</div><h1>${escapeHtml(listing.title)}</h1><p class="detail-hero-place">${escapeHtml(listing.address || listing.location)}</p></div></header>
+    ${upcoming ? portfolioFloorPlanMarkup(listing, false) : ''}
+    <section class="container detail-summary"><div><div class="detail-facts"><div class="detail-fact"><span>${upcoming ? 'Estimated price' : 'Asking price'}</span><strong>${formatPrice(listing.price)}</strong></div><div class="detail-fact"><span>${upcoming ? 'Proposed area' : 'Built area'}</span><strong>${escapeHtml(listing.area || 'To be confirmed')}</strong></div><div class="detail-fact"><span>${upcoming ? 'Expected completion' : 'Availability'}</span><strong>${upcoming ? escapeHtml(listing.expectedCompletion || 'To be announced') : listing.status === 'ready' ? 'Ready now' : 'In progress'}</strong></div></div>${upcoming ? `<p class="upcoming-price-note">Prices, layouts and completion dates are estimates and may change as plans develop.</p>${listing.projectType ? `<p><strong>Project type:</strong> ${escapeHtml(listing.projectType)}</p>` : ''}${!listing.floorPlan?.published ? '<p class="muted">The proposed 3D layout will be shared when it is ready.</p>' : ''}` : ''}<span class="eyebrow">${upcoming ? 'About this project' : 'About this home'}</span><div class="prose">${listing.description}</div></div>
+      <aside class="detail-aside"><span class="detail-aside-label">Direct owner contact</span><h2>${upcoming ? 'Ask about this project.' : 'See it first-hand.'}</h2><p>${upcoming ? 'Discuss the proposed layout, estimated budget and launch plans directly with our team.' : 'Ask for the floor plan, full specification, or arrange a visit directly with our team.'}</p>${contactButtons(listing.title)}${upcoming ? '<a class="upcoming-back" href="/upcoming-projects" data-link>All upcoming projects</a>' : ''}</aside>
     </section>
-    ${galleryMarkup}${portfolioFloorPlanMarkup(listing, false)}${timelineMarkup}${mapMarkup}
-    <section class="bottom-contact"><div class="container bottom-contact-inner"><div><h2>Would you like to walk through?</h2><p>Visits are arranged directly with the owner team. No broker hand-off.</p></div><div class="bottom-contact-actions">${contactButtons(listing.title, true)}</div></div></section>
+    ${galleryMarkup}${upcoming ? '' : portfolioFloorPlanMarkup(listing, false)}${timelineMarkup}${mapMarkup}
+    <section class="bottom-contact"><div class="container bottom-contact-inner"><div><h2>${upcoming ? 'Interested in this upcoming project?' : 'Would you like to walk through?'}</h2><p>${upcoming ? 'Ask the owner team about plans, pricing and the expected timeline.' : 'Visits are arranged directly with the owner team. No broker hand-off.'}</p></div><div class="bottom-contact-actions">${contactButtons(listing.title, true)}</div></div></section>
   </article>`;
   renderChrome();
   if (listing.floorPlan?.published && FloorPlanGeometry.hasGeometry(listing.floorPlan)) FloorPlanUI.createViewer(document.querySelector('#project-floor-plan'), listing.floorPlan, `3D building of ${listing.title}`);
@@ -387,6 +394,7 @@ function renderNotFound() {
 
 async function renderAdmin() {
   state.currentListing = null;
+  main.innerHTML = '<section class="admin-page"><div class="workspace-loading" role="status"><span class="action-spinner" aria-hidden="true"></span>Opening owner dashboard…</div></section>';
   document.title = `Owner dashboard — ${state.settings.brandName}`;
   const session = await api('/api/session');
   if (!session.authenticated) return renderLogin();
@@ -399,24 +407,28 @@ function renderLogin() {
   document.querySelector('#login-form').addEventListener('submit', async event => {
     event.preventDefault();
     const button = event.currentTarget.querySelector('button[type=submit]');
-    button.disabled = true;
+    const finish = EditorWorkspace.busy(button, 'Signing in…');
     try {
       await api('/api/login', { method: 'POST', body: JSON.stringify({ password: event.currentTarget.password.value }) });
       await renderAdmin();
       toast('Signed in.');
     } catch (error) { document.querySelector('#login-error').innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
-    finally { button.disabled = false; }
+    finally { finish(); }
   });
 }
 
 function renderAdminShell() {
-  main.innerHTML = `<section class="admin-page"><div class="admin-shell"><aside class="admin-sidebar"><h2>Owner dashboard</h2><nav class="admin-nav" aria-label="Dashboard"><button type="button" data-admin-tab="listings">Listings</button><button type="button" data-admin-tab="portfolio">Previous projects</button><button type="button" data-admin-tab="models">3D Projects</button><button type="button" data-admin-tab="settings">Contact & tags</button></nav><button class="btn btn-light btn-small" id="admin-logout" type="button">Sign out</button></aside><div class="admin-content" id="admin-content"></div></div></section>`;
+  main.innerHTML = `<section class="admin-page"><div class="admin-shell"><aside class="admin-sidebar"><h2>Owner dashboard</h2><nav class="admin-nav" aria-label="Dashboard"><button type="button" data-admin-tab="listings">Listings</button><button type="button" data-admin-tab="upcoming">Upcoming projects</button><button type="button" data-admin-tab="portfolio">Previous projects</button><button type="button" data-admin-tab="models">3D Projects</button><button type="button" data-admin-tab="settings">Contact & tags</button></nav><button class="btn btn-light btn-small" id="admin-logout" type="button">Sign out</button></aside><div class="admin-content" id="admin-content"></div></div></section>`;
   document.querySelectorAll('[data-admin-tab]').forEach(button => button.addEventListener('click', () => {
     state.admin.tab = button.dataset.adminTab;
     state.admin.editing = null;
     drawAdminTab();
   }));
-  document.querySelector('#admin-logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); state.admin.data = null; renderLogin(); toast('Signed out.'); });
+  document.querySelector('#admin-logout').addEventListener('click', async event => {
+    const finish = EditorWorkspace.busy(event.currentTarget, 'Signing out…');
+    try { await api('/api/logout', { method: 'POST' }); state.admin.data = null; renderLogin(); toast('Signed out.'); }
+    catch (error) { toast(error.message); } finally { finish(); }
+  });
   drawAdminTab();
 }
 
@@ -432,11 +444,12 @@ function drawAdminTab() {
 }
 
 function drawAdminListings() {
-  const listings = state.admin.data.listings;
+  const upcoming = state.admin.tab === 'upcoming';
+  const listings = state.admin.data.listings.filter(item => (item.status === 'upcoming') === upcoming);
   const readyCount = listings.filter(item => item.status === 'ready').length;
   const buildCount = listings.length - readyCount;
   const featuredCount = listings.filter(item => item.featured).length;
-  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><span class="eyebrow">Portfolio overview</span><h1>Your homes</h1><p>Manage every detail buyers see on the public site.</p></div><button class="btn" id="add-listing" type="button">Add a listing</button></div><div class="admin-stats"><div><span>Published</span><strong>${listings.length}</strong></div><div><span>Ready for sale</span><strong>${readyCount}</strong></div><div><span>In progress</span><strong>${buildCount}</strong></div><div><span>Homepage</span><strong>${featuredCount}</strong></div></div><div class="admin-panel"><div class="admin-list">${listings.map(listing => `<article class="admin-listing"><img src="${escapeHtml(listing.mainImage)}" alt=""><div><div class="admin-listing-flags">${listing.featured ? '<span>Homepage</span>' : ''}<span>${listing.status === 'ready' ? 'Ready' : 'Building'}</span></div><h3>${escapeHtml(listing.title)}</h3><p>${escapeHtml(listing.location)} · ${formatPrice(listing.price)}</p><small>Updated ${formatDate(listing.updatedAt)}</small></div><div class="admin-listing-actions"><a class="btn btn-outline btn-small" href="/listing/${encodeURIComponent(listing.id)}" data-link>View</a><button class="btn btn-outline btn-small" type="button" data-edit="${escapeHtml(listing.id)}">Edit</button><button class="btn btn-danger btn-small" type="button" data-delete="${escapeHtml(listing.id)}">Delete</button></div></article>`).join('')}</div></div>`;
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${upcoming ? 'Upcoming projects' : 'Your homes'}</h1><p>${upcoming ? 'Plan future homes with estimated pricing, locations and 3D layouts.' : 'Manage every detail buyers see on the public site.'}</p></div><button class="btn" id="add-listing" type="button">${upcoming ? 'Add upcoming project' : 'Add a listing'}</button></div>${upcoming ? '' : `<div class="admin-stats"><div><span>Published</span><strong>${listings.length}</strong></div><div><span>Ready for sale</span><strong>${readyCount}</strong></div><div><span>In progress</span><strong>${buildCount}</strong></div><div><span>Homepage</span><strong>${featuredCount}</strong></div></div>`}<div class="admin-panel"><div class="admin-list">${listings.length ? listings.map(adminListingRow).join('') : `<div class="empty-state"><h2>${upcoming ? 'Plan your next project.' : 'No homes added yet.'}</h2><p>${upcoming ? 'Add its location and estimated price, then build a 3D layout from the floor plan. You can add a model later.' : 'Add a listing to show it on the website.'}</p></div>`}</div></div>`;
   document.querySelector('#add-listing').onclick = () => { state.admin.editing = 'new'; drawAdminTab(); };
   document.querySelectorAll('[data-edit]').forEach(button => button.onclick = () => { state.admin.editing = button.dataset.edit; drawAdminTab(); });
   document.querySelectorAll('[data-delete]').forEach(button => button.onclick = () => confirmDelete(button.dataset.delete));
@@ -447,13 +460,14 @@ function confirmDelete(id) {
   modalRoot.innerHTML = `<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-title"><div class="confirm-card"><h2 id="delete-title">Delete this listing?</h2><p>“${escapeHtml(listing.title)}” will be removed from the public site. This cannot be undone.</p><div class="confirm-actions"><button class="btn btn-outline" type="button" id="cancel-delete">Keep listing</button><button class="btn btn-danger" type="button" id="confirm-delete">Delete</button></div></div></div>`;
   document.body.classList.add('no-scroll');
   document.querySelector('#cancel-delete').onclick = closeModal;
-  document.querySelector('#confirm-delete').onclick = async () => {
+  document.querySelector('#confirm-delete').onclick = async event => {
+    const finish = EditorWorkspace.busy(event.currentTarget, 'Deleting listing…');
     try {
       await api(`/api/admin/listings/${encodeURIComponent(id)}`, { method: 'DELETE' });
       state.admin.data = await api('/api/admin/data');
       state.listings = (await api('/api/listings')).listings;
       closeModal(); drawAdminListings(); toast('Listing deleted.');
-    } catch (error) { toast(error.message); }
+    } catch (error) { toast(error.message); } finally { finish(); }
   };
 }
 
@@ -472,13 +486,14 @@ function confirmProjectDelete(id) {
   modalRoot.innerHTML = `<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-project-title"><div class="confirm-card"><h2 id="delete-project-title">Delete this portfolio project?</h2><p>“${escapeHtml(project.title)}” will be removed from the previous-projects archive. Live listings are not affected.</p><div class="confirm-actions"><button class="btn btn-outline" type="button" id="cancel-delete-project">Keep project</button><button class="btn btn-danger" type="button" id="confirm-delete-project">Delete</button></div></div></div>`;
   document.body.classList.add('no-scroll');
   document.querySelector('#cancel-delete-project').onclick = closeModal;
-  document.querySelector('#confirm-delete-project').onclick = async () => {
+  document.querySelector('#confirm-delete-project').onclick = async event => {
+    const finish = EditorWorkspace.busy(event.currentTarget, 'Deleting project…');
     try {
       await api(`/api/admin/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
       state.admin.data = await api('/api/admin/data');
       state.projects = (await api('/api/projects')).projects;
       closeModal(); drawAdminProjects(); toast('Portfolio project deleted.');
-    } catch (error) { toast(error.message); }
+    } catch (error) { toast(error.message); } finally { finish(); }
   };
 }
 
@@ -489,7 +504,7 @@ function drawProjectForm(id) {
   state.admin.mainImage = project.mainImage || '';
   state.admin.gallery = [...(project.gallery || [])];
   document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${isNew ? 'Add previous project' : 'Edit previous project'}</h1><p>Portfolio projects are always displayed as sold and not currently for sale.</p></div></div>
-  <form class="admin-panel" id="project-form"><div id="form-error"></div><div class="sold-form-notice"><strong>Permanent customer label</strong><span>This project will show “Sold · Portfolio project” across the public site.</span></div><div class="form-grid">
+  <form class="admin-panel" id="project-form"><div id="form-error" role="alert"></div><section data-editor-section="details" data-editor-title="Project details"><div class="sold-form-notice"><strong>Permanent customer label</strong><span>This project will show “Sold · Portfolio project” across the public site.</span></div><div class="form-grid">
     <div class="field full"><label for="project-title">Project title</label><input id="project-title" name="title" value="${escapeHtml(project.title)}" required maxlength="90"></div>
     <div class="field"><label for="project-location">Location</label><input id="project-location" name="location" value="${escapeHtml(project.location)}" placeholder="Madurai, Tamil Nadu"></div>
     <div class="field"><label for="completedYear">Completion year</label><input id="completedYear" name="completedYear" type="number" min="1900" max="${new Date().getFullYear()}" value="${escapeHtml(project.completedYear)}" required></div>
@@ -501,10 +516,11 @@ function drawProjectForm(id) {
   </div>
   <div class="form-section"><h2>Project story</h2><p>Explain the brief, scale, design decisions, and outcome. Do not include sales language.</p></div>
   <div class="editor-toolbar" aria-label="Text formatting"><button type="button" data-command="bold" title="Bold"><strong>B</strong></button><button type="button" data-command="italic" title="Italic"><em>I</em></button><button type="button" data-command="insertUnorderedList" title="Bulleted list">• List</button></div><div class="rich-editor" id="project-description" contenteditable="true" role="textbox" aria-multiline="true">${project.description}</div>
-  <div class="form-section"><h2>Project photography</h2><p>Add the strongest completed view first, then supporting exterior and interior photographs.</p></div>
+  </section><section data-editor-section="photos" data-editor-title="Photos"><div class="form-section"><h2>Project photography</h2><p>Add the strongest completed view first, then supporting exterior and interior photographs.</p></div>
   <div class="form-grid"><div class="field full"><span>Main portfolio image</span><div class="upload-zone"><input id="project-main-upload" type="file" accept="image/*"><small>Recommended: landscape, at least 1600px wide.</small><div class="image-previews" id="main-preview"></div></div></div><div class="field full"><span>Project gallery</span><div class="upload-zone"><input id="project-gallery-upload" type="file" accept="image/*" multiple><small>Add up to 20 project images.</small><div class="image-previews" id="gallery-previews"></div></div></div></div>
-  <div class="form-section"><h2>Floor plan and 3D model</h2><p>Upload one drawing per floor, recognize walls, doors, windows and fixtures, then set the building size and review the large 3D preview. The floor plan stays optional; save it as a draft until ready.</p></div><div id="floor-plan-editor"></div>
+  </section><section data-editor-section="model" data-editor-title="Floor plan &amp; 3D"><div id="floor-plan-editor"></div></section>
   <div class="form-actions"><button class="btn btn-outline" type="button" id="cancel-project">Cancel</button><button class="btn" type="submit">${isNew ? 'Publish project' : 'Save project'}</button></div></form>`;
+  EditorWorkspace.organizeForm(document.querySelector('#project-form'));
   const floorPlanEditor = FloorPlanUI.createEditor(document.querySelector('#floor-plan-editor'), project.floorPlan, { compressImage });
   drawImagePreviews();
   document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => { document.execCommand(button.dataset.command, false); document.querySelector('#project-description').focus(); }));
@@ -519,33 +535,37 @@ function drawProjectForm(id) {
   document.querySelector('#cancel-project').onclick = () => { state.admin.editing = null; drawAdminTab(); };
   document.querySelector('#project-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const form = event.currentTarget; const submit = form.querySelector('[type=submit]'); submit.disabled = true;
+    const form = event.currentTarget; const submit = form.querySelector('[type=submit]');
+    const finish = EditorWorkspace.busy(submit, 'Saving project…');
+    await EditorWorkspace.paint();
     const data = Object.fromEntries(new FormData(form));
     const payload = { ...data, completedYear: Number(data.completedYear), description: document.querySelector('#project-description').innerHTML, mainImage: state.admin.mainImage, gallery: state.admin.gallery, featured: document.querySelector('#project-featured').checked, highProfile: document.querySelector('#highProfile').checked };
-    if (!payload.mainImage) { document.querySelector('#form-error').innerHTML = '<p class="error-message">Add a main project image before publishing.</p>'; submit.disabled = false; return; }
+    if (!payload.mainImage) { document.querySelector('#form-error').innerHTML = '<p class="error-message">Add a main project image before publishing.</p>'; finish(); return; }
     try {
       payload.floorPlan = floorPlanEditor.getValue();
       await api(isNew ? '/api/admin/projects' : `/api/admin/projects/${encodeURIComponent(project.id)}`, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
-      state.admin.data = await api('/api/admin/data'); state.projects = (await api('/api/projects')).projects; state.admin.editing = null; drawAdminProjects(); toast(isNew ? 'Previous project published.' : 'Project changes saved.');
+      const [adminData, projectData] = await Promise.all([api('/api/admin/data'), api('/api/projects')]);
+      state.admin.data = adminData; state.projects = projectData.projects; state.admin.editing = null; drawAdminProjects(); toast(isNew ? 'Previous project published.' : 'Project changes saved.');
     } catch (error) { document.querySelector('#form-error').innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
-    finally { submit.disabled = false; }
+    finally { finish(); }
   });
 }
 
 function drawListingForm(id) {
   const isNew = id === 'new';
-  const listing = isNew ? { title: '', area: '', location: '', address: '', mapPin: '', price: '', status: 'ready', trustBadge: '', description: '<p></p>', mainImage: '', gallery: [], zoomEnabled: true, featured: false, progress: [] } : state.admin.data.listings.find(item => item.id === id);
+  const listing = isNew ? { title: '', area: '', location: '', address: '', mapPin: '', price: '', status: state.admin.tab === 'upcoming' ? 'upcoming' : 'ready', trustBadge: '', description: '<p></p>', mainImage: '', gallery: [], zoomEnabled: true, featured: false, progress: [] } : state.admin.data.listings.find(item => item.id === id);
   if (!listing) { state.admin.editing = null; return drawAdminListings(); }
   state.admin.mainImage = listing.mainImage || '';
   state.admin.gallery = [...(listing.gallery || [])];
   state.admin.progress = (listing.progress || []).map(item => ({ ...item }));
-  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${isNew ? 'Add a home' : 'Edit home'}</h1><p>${isNew ? 'Publish a new listing to the collection.' : `Changes will add an Updated tag for ${state.admin.data.settings.updatedDays} days.`}</p></div></div>
-  <form class="admin-panel" id="listing-form"><div id="form-error"></div><div class="form-grid">
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${listing.status === 'upcoming' ? (isNew ? 'Add upcoming project' : 'Edit upcoming project') : isNew ? 'Add a home' : 'Edit home'}</h1><p>${listing.status === 'upcoming' ? 'Share the proposed home, location, estimated price and 3D layout.' : isNew ? 'Publish a new listing to the collection.' : `Changes will add an Updated tag for ${state.admin.data.settings.updatedDays} days.`}</p></div></div>
+  <form class="admin-panel" id="listing-form"><div id="form-error" role="alert"></div><section data-editor-section="details" data-editor-title="Home details"><div class="form-grid">
     <div class="field full"><label for="title">Listing title</label><input id="title" name="title" value="${escapeHtml(listing.title)}" required maxlength="90"></div>
     <div class="field"><label for="area">Housing area</label><input id="area" name="area" value="${escapeHtml(listing.area)}" placeholder="e.g. 3,200 sq ft"></div>
     <div class="field"><label for="price">Price in INR</label><input id="price" name="price" type="number" min="0" step="10000" value="${escapeHtml(listing.price)}" required></div>
     <div class="field"><label for="location">Area / neighbourhood</label><input id="location" name="location" value="${escapeHtml(listing.location)}" placeholder="Whitefield, Bengaluru"></div>
-    <div class="field"><label for="status">Build status</label><select id="status" name="status"><option value="ready" ${listing.status === 'ready' ? 'selected' : ''}>Ready for sale</option><option value="construction" ${listing.status === 'construction' ? 'selected' : ''}>Under construction</option></select></div>
+    <div class="field"><label for="status">Listing type / build status</label><select id="status" name="status"><option value="ready" ${listing.status === 'ready' ? 'selected' : ''}>Ready for sale</option><option value="construction" ${listing.status === 'construction' ? 'selected' : ''}>Under construction</option><option value="upcoming" ${listing.status === 'upcoming' ? 'selected' : ''}>Upcoming project</option></select></div>
+    <div class="form-grid full" data-upcoming-fields hidden><div class="field"><label for="projectType">Project type</label><input id="projectType" name="projectType" value="${escapeHtml(listing.projectType || '')}" maxlength="80" placeholder="e.g. Independent villa, apartments"></div><div class="field"><label for="expectedCompletion">Expected completion</label><input id="expectedCompletion" name="expectedCompletion" value="${escapeHtml(listing.expectedCompletion || '')}" maxlength="80" placeholder="e.g. December 2027 or Q4 2027"><small>Use an estimate while plans are developing.</small></div></div>
     <div class="field full"><label for="address">Full address</label><input id="address" name="address" value="${escapeHtml(listing.address)}"></div>
     <div class="field full"><label for="mapPin">Map pin or place search</label><input id="mapPin" name="mapPin" value="${escapeHtml(listing.mapPin)}" placeholder="Paste coordinates or enter an address"><small>Leave blank to hide the map.</small></div>
     <div class="field"><label for="trustBadge">Trust badge</label><select id="trustBadge" name="trustBadge"><option value="">No trust badge</option><option value="verified" ${listing.trustBadge === 'verified' ? 'selected' : ''}>Verified listing</option><option value="direct" ${listing.trustBadge === 'direct' ? 'selected' : ''}>Direct from builder</option></select></div>
@@ -553,17 +573,20 @@ function drawListingForm(id) {
   </div>
   <div class="form-section"><h2>Description</h2><p>Describe the plan, materials, readiness, and practical details in a clear voice.</p></div>
   <div class="editor-toolbar" aria-label="Text formatting"><button type="button" data-command="bold" title="Bold"><strong>B</strong></button><button type="button" data-command="italic" title="Italic"><em>I</em></button><button type="button" data-command="insertUnorderedList" title="Bulleted list">• List</button></div><div class="rich-editor" id="description" contenteditable="true" role="textbox" aria-multiline="true">${listing.description}</div>
-  <div class="form-section"><h2>Photography</h2><p>Uploads are resized and compressed to WebP in your browser before saving.</p></div>
+  </section><section data-editor-section="photos" data-editor-title="Photos &amp; progress"><div class="form-section"><h2>Photography</h2><p>Add a cover photo and the images buyers will see in the gallery.</p></div>
   <div class="form-grid"><div class="field full"><span>Main hero image</span><div class="upload-zone"><input id="main-image-upload" type="file" accept="image/*"><small>Recommended: landscape, at least 1600px wide.</small><div class="image-previews" id="main-preview"></div></div></div>
   <div class="field full"><span>Image gallery</span><div class="upload-zone"><input id="gallery-upload" type="file" accept="image/*" multiple><small>Add up to 16 images. Existing images stay until removed.</small><div class="image-previews" id="gallery-previews"></div></div></div>
   <div class="field toggle-field full"><input id="zoomEnabled" name="zoomEnabled" type="checkbox" ${listing.zoomEnabled ? 'checked' : ''}><label for="zoomEnabled">Enable full-screen zoom when a visitor selects a gallery image</label></div></div>
   <div class="form-section" id="progress-heading"><h2>Construction progress</h2><p>Shown only while the listing is marked Under construction. Add dated stages in order.</p></div><div class="progress-editor" id="progress-editor"></div><button class="btn btn-outline btn-small" type="button" id="add-progress">Add progress stage</button>
-  <div id="listing-floor-plan-editor"></div>
+  </section><section data-editor-section="model" data-editor-title="Floor plan &amp; 3D"><div id="listing-floor-plan-editor"></div></section>
   <div class="form-actions"><button class="btn btn-outline" type="button" id="cancel-listing">Cancel</button><button class="btn" type="submit">${isNew ? 'Publish listing' : 'Save changes'}</button></div></form>`;
+  EditorWorkspace.organizeForm(document.querySelector('#listing-form'));
   drawImagePreviews();
   drawProgressEditor();
   updateProgressVisibility();
+  updateUpcomingFields();
   document.querySelector('#status').addEventListener('change', updateProgressVisibility);
+  document.querySelector('#status').addEventListener('change', updateUpcomingFields);
   document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => { document.execCommand(button.dataset.command, false); document.querySelector('#description').focus(); }));
   document.querySelector('#main-image-upload').addEventListener('change', async event => {
     const file = event.target.files[0];
@@ -611,25 +634,30 @@ function drawProgressEditor() {
 }
 
 async function compressImage(file, maxWidth, quality) {
-  if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
-  if (file.size > 18 * 1024 * 1024) throw new Error('This image is larger than 18 MB. Choose a smaller file.');
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxWidth / bitmap.width);
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', quality));
-  if (!blob) throw new Error('The image could not be optimized.');
-  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+  const finish = EditorWorkspace.progress('Processing image…');
+  try {
+    await EditorWorkspace.paint();
+    if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+    if (file.size > 18 * 1024 * 1024) throw new Error('This image is larger than 18 MB. Choose a smaller file.');
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxWidth / bitmap.width);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', quality));
+    if (!blob) throw new Error('The image could not be optimized.');
+    return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+  } finally { finish(); }
 }
 
 async function saveListing(event, original, isNew, buildingEditor) {
   event.preventDefault();
   const form = event.currentTarget;
   const submit = form.querySelector('[type=submit]');
-  submit.disabled = true;
+  const finish = EditorWorkspace.busy(submit, 'Saving project…');
+  await EditorWorkspace.paint();
   const data = Object.fromEntries(new FormData(form));
   const payload = {
     ...data,
@@ -641,21 +669,19 @@ async function saveListing(event, original, isNew, buildingEditor) {
     featured: document.querySelector('#featured').checked,
     progress: state.admin.progress
   };
-  if (!payload.mainImage) {
-    document.querySelector('#form-error').innerHTML = '<p class="error-message">Add a main hero image before publishing.</p>';
-    submit.disabled = false;
-    return;
-  }
   try {
     payload.floorPlan = buildingEditor.getValue();
+    if (!payload.mainImage && payload.status === 'upcoming') payload.mainImage = '/mark.svg?v=3';
+    if (!payload.mainImage) throw new Error('Add a main hero image before publishing.');
     await api(isNew ? '/api/admin/listings' : `/api/admin/listings/${encodeURIComponent(original.id)}`, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
-    state.admin.data = await api('/api/admin/data');
-    state.listings = (await api('/api/listings')).listings;
+    const [adminData, publicData] = await Promise.all([api('/api/admin/data'), api('/api/listings')]);
+    state.admin.data = adminData; state.listings = publicData.listings;
+    state.admin.tab = payload.status === 'upcoming' ? 'upcoming' : 'listings';
     state.admin.editing = null;
     drawAdminListings();
     toast(isNew ? 'Listing published.' : 'Changes saved.');
   } catch (error) { document.querySelector('#form-error').innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
-  finally { submit.disabled = false; }
+  finally { finish(); }
 }
 
 function drawSettingsForm() {
@@ -672,7 +698,8 @@ function drawSettingsForm() {
     event.preventDefault();
     const form = event.currentTarget;
     const button = form.querySelector('[type=submit]');
-    button.disabled = true;
+    const finish = EditorWorkspace.busy(button, 'Saving settings…');
+    await EditorWorkspace.paint();
     try {
       const payload = Object.fromEntries(new FormData(form));
       const result = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
@@ -682,7 +709,7 @@ function drawSettingsForm() {
       renderChrome();
       toast('Site settings saved.');
     } catch (error) { document.querySelector('#form-error').innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
-    finally { button.disabled = false; }
+    finally { finish(); }
   });
 }
 
@@ -705,6 +732,7 @@ async function renderRoute() {
     renderChrome();
     if (path === '/') renderHome();
     else if (path === '/listings') renderListings();
+    else if (path === '/upcoming-projects') renderUpcomingProjects();
     else if (path.startsWith('/listing/')) renderListing(path.slice('/listing/'.length));
     else if (path === '/portfolio') renderPortfolio();
     else if (path === '/3d-projects') renderModelShowcase();

@@ -18,17 +18,17 @@ function drawAdminModels() {
   document.querySelectorAll('[data-delete-model]').forEach(button => button.onclick = async () => {
     const model = models.find(item => item.id === button.dataset.deleteModel);
     if (!window.confirm(`Delete “${model.title}” and its floor-plan model?`)) return;
-    button.disabled = true;
+    const finish = EditorWorkspace.busy(button, 'Deleting project…');
     try {
       await api(`/api/admin/models/${encodeURIComponent(model.id)}`, { method: 'DELETE' });
       await refreshModels(); drawAdminModels(); toast('3D project deleted.');
-    } catch (error) { toast(error.message); button.disabled = false; }
+    } catch (error) { toast(error.message); } finally { finish(); }
   });
 }
 
 async function refreshModels() {
-  state.admin.data = await api('/api/admin/data');
-  state.models = (await api('/api/models')).models;
+  const [adminData, modelsData] = await Promise.all([api('/api/admin/data'), api('/api/models')]);
+  state.admin.data = adminData; state.models = modelsData.models;
   renderChrome();
 }
 
@@ -36,20 +36,22 @@ function drawModelForm(id) {
   const isNew = id === 'new';
   const model = isNew ? { title: '', location: '', description: '', floorPlan: null } : (state.admin.data.models || []).find(item => item.id === id);
   if (!model) { state.admin.editing = null; return drawAdminModels(); }
-  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${isNew ? 'Add 3D project' : 'Edit 3D project'}</h1><p>Save a draft now or publish a reviewed floor-plan model.</p></div></div><form class="admin-panel" id="model-form"><div id="model-error" role="alert"></div><div class="form-grid"><div class="field full"><label for="model-title">Project name</label><input id="model-title" name="title" maxlength="90" required value="${escapeHtml(model.title)}"></div><div class="field full"><label for="model-location">Location (optional)</label><input id="model-location" name="location" maxlength="140" value="${escapeHtml(model.location)}"></div><div class="field full"><label for="model-description">About this model (optional)</label><textarea id="model-description" name="description" rows="3" maxlength="2000">${escapeHtml(model.description)}</textarea></div></div><div id="floor-plan-editor"></div><div class="form-actions"><button class="btn btn-outline" id="cancel-model" type="button">Cancel</button><button class="btn" type="submit">Save 3D project</button></div></form>`;
+  document.querySelector('#admin-content').innerHTML = `<div class="admin-top"><div><h1>${isNew ? 'Add 3D project' : 'Edit 3D project'}</h1><p>Save a draft now or publish a reviewed floor-plan model.</p></div></div><form class="admin-panel" id="model-form"><div id="model-error" role="alert"></div><section data-editor-section="details" data-editor-title="Project details"><div class="form-grid"><div class="field full"><label for="model-title">Project name</label><input id="model-title" name="title" maxlength="90" required value="${escapeHtml(model.title)}"></div><div class="field full"><label for="model-location">Location (optional)</label><input id="model-location" name="location" maxlength="140" value="${escapeHtml(model.location)}"></div><div class="field full"><label for="model-description">About this model (optional)</label><textarea id="model-description" name="description" rows="3" maxlength="2000">${escapeHtml(model.description)}</textarea></div></div></section><section data-editor-section="model" data-editor-title="Floor plan &amp; 3D"><div id="floor-plan-editor"></div></section><div class="form-actions"><button class="btn btn-outline" id="cancel-model" type="button">Cancel</button><button class="btn" type="submit">Save 3D project</button></div></form>`;
+  EditorWorkspace.organizeForm(document.querySelector('#model-form'), model.floorPlan ? 'model' : 'details');
   const editor = FloorPlanUI.createEditor(document.querySelector('#floor-plan-editor'), model.floorPlan, { compressImage });
   document.querySelector('#cancel-model').onclick = () => { state.admin.editing = null; drawAdminModels(); };
   document.querySelector('#model-form').onsubmit = async event => {
     event.preventDefault();
     const form = event.currentTarget, button = form.querySelector('[type="submit"]');
-    button.disabled = true;
+    const finish = EditorWorkspace.busy(button, 'Saving 3D project…');
+    await EditorWorkspace.paint();
     try {
       const payload = { ...Object.fromEntries(new FormData(form)), floorPlan: editor.getValue() };
       await api(isNew ? '/api/admin/models' : `/api/admin/models/${encodeURIComponent(model.id)}`, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
       await refreshModels(); state.admin.editing = null; drawAdminModels();
       toast(payload.floorPlan?.published ? '3D project saved and published.' : '3D project draft saved.');
     } catch (error) { document.querySelector('#model-error').textContent = error.message; }
-    finally { button.disabled = false; }
+    finally { finish(); }
   };
 }
 

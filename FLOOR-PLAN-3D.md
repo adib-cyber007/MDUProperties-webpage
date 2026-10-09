@@ -59,7 +59,7 @@ service. It does not save or publish automatically. The same editor appears in
 
 ## Surprise me interior designer
 
-In an owner project/listing/model editor, upload and review a floor plan, then use **Surprise me** above the floor editor. Choose a style and Paint + an accent, Paint only, or Wallpaper for inside wall faces. The designer chooses a separate complementary exterior finish using render, paint, stone, concrete or cladding; it never generates exterior wallpaper. Finishes apply to every uploaded floor; empty floors are skipped. **Undo design** restores the entire previous house design when no later planner changes have been made. Try another design for a different palette, or adjust colors and patterns manually. Save the project to persist the result. Geometry, openings, furniture and dimensions are preserved.
+In an owner project/listing/model editor, open **Floor plan & 3D**, upload and review a floor plan, then expand **Style assistant for all floors** to use **Surprise me**. Choose a style and Paint + an accent, Paint only, or Wallpaper for inside wall faces. The designer chooses a separate complementary exterior finish using render, paint, stone, concrete or cladding; it never generates exterior wallpaper. Finishes apply to every uploaded floor; empty floors are skipped. **Undo design** restores the entire previous house design when no later planner changes have been made. Try another design for a different palette, or adjust colors and patterns manually. Save the project to persist the result. Geometry, openings, furniture and dimensions are preserved.
 
 In **Walls, floors & ceiling**, select a wall on the drawing or in **Saved segments**, then enable **Lock selected wall** to keep both its inside and outside finishes, including uploaded samples. You can also **Lock all walls on this floor (inside & outside)**, **Lock exterior on this floor**, **Lock flooring on this floor**, or **Lock ceiling on this floor**. Switch floors to set their locks separately. **Surprise me** regenerates only unprotected finishes; a wall inheriting a floor-wide finish gets its own copy when individually locked. Locks persist when the project is saved and reopened. Manual finish edits remain available while locked. Unlock a surface to include it in later generations; the button is disabled when all rendered finishes are protected. **Also keep unlocked individual wall finishes** optionally preserves existing inside/outside overrides as well, and is off by default.
 
@@ -83,7 +83,21 @@ Start with `node --env-file=.env.local server.js` so Node loads the variables. P
 
 ## Multi-floor buildings for current and previous projects
 
+### Upcoming projects
+
+Use **Owner dashboard → Upcoming projects → Add upcoming project** for a planned development. Enter a title, location and positive estimated price, then add its proposed area, project type, expected completion, address and description. Cover photos are optional while planning; the website uses its brand mark when no photo is supplied.
+
+Use **Floor plan & 3D** to upload each floor drawing, review detected walls and furniture, and confirm the dimensions. Check **Show this 3D building on this property's page** and save to publish the model. Leave the box unchecked to keep the model and source drawing private while sharing project details. Projects can be saved before their model is ready.
+
+Visitors find these entries at `/upcoming-projects` and in the homepage's Upcoming projects section. Prices and completion dates are labeled as estimates. Upcoming entries are excluded from Available homes. Change the listing type to Under construction or Ready for sale as the project advances; its saved model is retained. Those listing types require a cover photo. Upcoming metadata uses the existing listing store and requires no database migration.
+
+Saving, signing in, image processing and downloads display progress immediately. Save buttons stay disabled until completion and recover on errors. The combined building preview loads when opened, avoiding a second hidden model during editing. `npm run test:editor:browser` also verifies upcoming creation, publication, retry feedback and the public walkthrough with an isolated store.
+
 Open **Admin → Listings → Edit** for a current property, **Previous projects → Edit** for a completed property, or **3D Projects → Edit** for a standalone showcase. Each has the same optional building editor; no model is required to save a property.
+
+The owner form separates property details, photos (where applicable), and **Floor plan & 3D** into tabs. Inside the 3D workspace, **Drawing & scale**, **Walls & openings**, **Finishes**, and **Furniture** group the tools while keeping the drawing and floor preview available. Wide screens show the preview beside the tools; smaller screens stack them. Switching sections keeps your edits; the save button stays at the bottom of the screen. Required fields reveal their section when validation fails.
+
+Expand **Drawing source & recognition** to upload or replace a drawing, and **Advanced recognition options** to select the recognition profile or enable local vision review. **Floor alignment & slab settings** contains offsets and slab thickness. Use **Review entire building in 3D** for the combined preview. Each preview's **View options & downloads** contains full walls, ceiling controls, image/GLB export and rendering quality; **Export this floor** contains OBJ and layout JSON. Run `npm run test:editor:browser` for isolated desktop/mobile navigation, editing, validation, export and save/reopen checks using a synthetic model.
 
 1. Choose **Number of floors**, including the ground floor (1–8).
 2. Choose **Edit floor**, starting with **Ground floor**, and upload its PNG/JPEG/WebP drawing. Export PDF pages as images first. Wall detection builds an initial layout; review walls/openings, calibrate or confirm the real dimensions, and enter the wall height. Add/review furniture using the existing controls.

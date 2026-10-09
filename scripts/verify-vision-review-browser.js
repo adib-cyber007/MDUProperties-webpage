@@ -56,6 +56,7 @@ async function run(){
     await page.getByRole('button',{name:'Open dashboard'}).click();
     await page.locator('[data-admin-tab="models"]').click();await page.locator('#add-model').click();
     await page.locator('#model-title').fill('Local vision review verification');
+    await page.getByRole('tablist',{name:'Property editor sections'}).getByRole('tab',{name:'Floor plan & 3D',exact:true}).click();
     await page.locator('[data-recognition-status]').filter({hasText:'Pretrained recognition is ready'}).waitFor();
     const drawing=await page.evaluate(()=>{
       const canvas=document.createElement('canvas');canvas.width=400;canvas.height=300;
@@ -67,10 +68,13 @@ async function run(){
     });
     await page.locator('#fp-upload').setInputFiles({name:'synthetic-plan.png',mimeType:'image/png',buffer:Buffer.from(drawing,'base64')});
     await page.locator('.fp-status').filter({hasText:'Pretrained model recognition.'}).waitFor();
+    await page.getByRole('tablist',{name:'Floor editor tools'}).getByRole('tab',{name:'Walls & openings',exact:true}).click();
     const layout=()=>page.evaluate(()=>window.__visionEditor.getValue());
     const baseline=await layout();
     assert.equal(requests.length,1);assert.equal(requests[0].visionReview,undefined);
     assert.equal(await page.locator('[data-vision-review]').isVisible(),false);
+    await page.locator('.fp-source-settings > summary').click();
+    await page.locator('.fp-source-settings > .workspace-disclosure > summary').click();
     await page.locator('[data-vision-enabled]').check();
     await page.locator('[data-action="detect"]').click();
     await page.locator('[data-vision-summary]').filter({hasText:'2 flags awaiting your review'}).waitFor();
@@ -92,6 +96,7 @@ async function run(){
     await page.getByRole('button',{name:'Save 3D project',exact:true}).click();
     await page.getByRole('heading',{name:'3D Projects',exact:true}).waitFor();
     await page.locator('[data-edit-model]').first().click();
+    await page.getByRole('tablist',{name:'Floor editor tools'}).getByRole('tab',{name:'Walls & openings',exact:true}).click();
     await page.locator('[data-vision-items]').getByRole('button',{name:'Remove wall',exact:true}).waitFor();
     assert.equal((await layout()).recognition.visionReview.items[0].decision,'kept');
     checks.push('saved review decisions and contextual crops reopen');
@@ -101,6 +106,8 @@ async function run(){
     await page.screenshot({path:path.join(work,'vision-review-mobile.png')});
     checks.push('review controls fit mobile');
     failReview=true;
+    await page.locator('.fp-source-settings > summary').click();
+    await page.locator('.fp-source-settings > .workspace-disclosure > summary').click();
     await page.locator('[data-vision-enabled]').check();await page.locator('[data-action="detect"]').click();
     await page.locator('[data-vision-summary]').filter({hasText:'reviewer was unavailable'}).waitFor();
     assert.deepEqual((await layout()).walls,baseline.walls);

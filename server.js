@@ -453,11 +453,16 @@ function slugify(title, existing, currentId = '') {
 function validateListing(input, existing, current) {
   const title = cleanText(input.title, 90);
   const price = Number(input.price);
-  const mainImage = cleanUrl(input.mainImage);
+  const status = ['construction', 'upcoming'].includes(input.status) ? input.status : 'ready';
+  const floorPlan = validateFloorPlan(input.floorPlan);
+  const mainImage = cleanUrl(input.mainImage) || (status === 'upcoming' ? '/mark.svg?v=3' : '');
   if (!title || !Number.isFinite(price) || price < 0 || !mainImage) {
     throw Object.assign(new Error('Title, a valid price, and a main image are required.'), { status: 400 });
   }
-  const status = input.status === 'construction' ? 'construction' : 'ready';
+  if (status === 'upcoming' && !cleanText(input.location, 140)) {
+    throw Object.assign(new Error('Add a location for the upcoming project.'), { status: 400 });
+  }
+  if (status === 'upcoming' && price <= 0) throw Object.assign(new Error('Add a positive estimated price for the upcoming project.'), { status: 400 });
   const now = new Date().toISOString();
   return {
     id: current?.id || slugify(title, existing),
@@ -468,13 +473,15 @@ function validateListing(input, existing, current) {
     mapPin: cleanText(input.mapPin, 300),
     price,
     status,
+    projectType: cleanText(input.projectType, 80),
+    expectedCompletion: cleanText(input.expectedCompletion, 80),
     trustBadge: ['verified', 'direct'].includes(input.trustBadge) ? input.trustBadge : '',
     description: cleanDescription(input.description),
     mainImage,
     gallery: Array.isArray(input.gallery) ? input.gallery.map(cleanUrl).filter(Boolean).slice(0, 16) : [],
     zoomEnabled: Boolean(input.zoomEnabled),
     featured: Boolean(input.featured),
-    floorPlan: validateFloorPlan(input.floorPlan),
+    floorPlan,
     progress: status === 'construction' && Array.isArray(input.progress) ? input.progress.map(item => ({
       stage: cleanText(item.stage, 60),
       date: /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') ? item.date : '',
@@ -581,21 +588,21 @@ async function listListingRecords() {
   return (await readStoreForManagement()).listings;
 }
 
-async function createListingRecord(input) {
+async function createListingRecord(input, withSettings = false) {
   const store = await readStoreForManagement();
   const listing = validateListing(input, store.listings);
   store.listings.unshift(listing);
   await writeStore(store);
-  return listing;
+  return withSettings ? { listing, settings: store.settings } : listing;
 }
 
-async function updateListingRecord(id, patch) {
+async function updateListingRecord(id, patch, withSettings = false) {
   const store = await readStoreForManagement();
   const index = store.listings.findIndex(item => item.id === id);
   if (index < 0) throw Object.assign(new Error('Listing not found.'), { status: 404 });
   store.listings[index] = validateListing({ ...store.listings[index], ...patch }, store.listings, store.listings[index]);
   await writeStore(store);
-  return store.listings[index];
+  return withSettings ? { listing: store.listings[index], settings: store.settings } : store.listings[index];
 }
 
 async function deleteListingRecord(id) {
@@ -714,7 +721,8 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { deleted: true });
   }
 
-  const store = await readStore();
+  // Only public data reads need this store; management operations read it once themselves.
+  const store = req.method === 'GET' && /^\/api\/(listings|projects|models|settings)(\/|$)/.test(url.pathname) ? await readStore() : null;
 
   if (req.method === 'GET' && url.pathname === '/api/listings') {
     return sendJson(res, 200, { listings: store.listings.map(item => publicListing(item, store.settings)) });
@@ -799,14 +807,14 @@ async function handleApi(req, res, url) {
   }
   if (req.method === 'POST' && url.pathname === '/api/admin/listings') {
     if (!requireAuth(req, res)) return;
-    const listing = await createListingRecord(await readJson(req));
-    return sendJson(res, 201, { listing: publicListing(listing, store.settings) });
+    const saved = await createListingRecord(await readJson(req), true);
+    return sendJson(res, 201, { listing: publicListing(saved.listing, saved.settings) });
   }
   const listingMatch = url.pathname.match(/^\/api\/admin\/listings\/([^/]+)$/);
   if (listingMatch && req.method === 'PUT') {
     if (!requireAuth(req, res)) return;
-    const listing = await updateListingRecord(decodeURIComponent(listingMatch[1]), await readJson(req));
-    return sendJson(res, 200, { listing: publicListing(listing, store.settings) });
+    const saved = await updateListingRecord(decodeURIComponent(listingMatch[1]), await readJson(req), true);
+    return sendJson(res, 200, { listing: publicListing(saved.listing, saved.settings) });
   }
   if (listingMatch && req.method === 'DELETE') {
     if (!requireAuth(req, res)) return;

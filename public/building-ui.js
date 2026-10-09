@@ -8,21 +8,26 @@
     let building = checked?.version === 2 ? checked : { version: 2, published: checked?.published || false, floors: checked ? G.floorsOf(checked).map(({ name, plan, offsetX, offsetZ, slabThickness }) => ({ name, plan, offsetX, offsetZ, slabThickness })) : [blank(0)] };
     let selected = 0, child = null, mounting = false, timer, designer = null, designing = false;
     root.classList.add('building-editor');
-    root.innerHTML = `<div class="form-section"><h2>Optional 3D building</h2><p>How many floors does this property have? Include the ground floor. Upload one drawing per floor, then review the combined model.</p></div>
+    root.innerHTML = `<div class="building-heading"><h2>Floor plan &amp; 3D workspace</h2><p>Add a drawing for each floor, check the layout, then review your building. You can save your work as a draft.</p></div>
       <div class="building-floor-bar"><label>Number of floors <select data-floor-count aria-label="Number of floors">${Array.from({ length: G.MAX_FLOORS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}</select></label><label>Edit floor <select data-edit-floor aria-label="Edit floor"></select></label></div>
       <p data-building-status role="status" aria-live="polite"></p>
-      <div class="building-position form-grid"><label>Slab thickness (ft)<input data-position="slabThickness" type="number" min=".2" max="3" step=".1"></label><label>Left/right offset (ft)<input data-position="offsetX" type="number" min="-500" max="500" step=".1"></label><label>Front/back offset (ft)<input data-position="offsetZ" type="number" min="-500" max="500" step=".1"></label></div>
-      <p class="fp-note">Ground floor stays at the bottom. Upper floors stack using the floor below’s wall height and their slab thickness. Drawings align at their centres; use offsets to align stairs and outside walls when plans have different margins.</p>
-      <section class="fp-designer" data-building-designer hidden></section><div data-floor-host></div><section class="building-preview"><h3>Combined building preview</h3><p data-floor-summary></p><div data-building-viewer></div></section>
-      <label class="building-publish"><input type="checkbox" data-building-published> Show this 3D building on this property’s page</label><p class="fp-note">Upload, check dimensions and review walls for every floor before publishing. Save the property to keep your changes. You can save an incomplete model as a draft.</p>`;
+      <details class="workspace-disclosure building-alignment"><summary>Floor alignment &amp; slab settings</summary><div class="building-position form-grid"><label>Slab thickness (ft)<input data-position="slabThickness" type="number" min=".2" max="3" step=".1"></label><label>Left/right offset (ft)<input data-position="offsetX" type="number" min="-500" max="500" step=".1"></label><label>Front/back offset (ft)<input data-position="offsetZ" type="number" min="-500" max="500" step=".1"></label></div>
+      <p class="fp-note">Ground floor stays at the bottom. Upper floors stack using the floor below’s wall height and their slab thickness. Drawings align at their centres; use offsets to align stairs and outside walls when plans have different margins.</p></details>
+      <div data-floor-host></div><details class="workspace-disclosure building-design" data-building-design hidden><summary>Style assistant for all floors</summary><section class="fp-designer" data-building-designer hidden></section></details><details class="workspace-disclosure building-preview"><summary>Review entire building in 3D</summary><p data-floor-summary></p><div data-building-viewer></div></details>
+      <div class="building-publication"><label class="building-publish"><input type="checkbox" data-building-published> Show this 3D building on this property’s page</label><p class="fp-note">Check the dimensions and walls on every floor before publishing. Leave this unchecked to keep a draft, then save your changes.</p></div>`;
     const count = root.querySelector('[data-floor-count]'), selector = root.querySelector('[data-edit-floor]'), publish = root.querySelector('[data-building-published]');
     const status = root.querySelector('[data-building-status]');
     count.value = building.floors.length; publish.checked = building.published;
-    const preview = window.FloorPlanUI.createViewer(root.querySelector('[data-building-viewer]'), building, 'Combined building preview', { editable: true });
+    let preview = null;
+    const previewPanel = root.querySelector('.building-preview');
+    previewPanel.addEventListener('toggle', () => { if (previewPanel.open) showPreview(); });
     function report(error) { status.textContent = error?.message || ''; status.classList.toggle('error-message', !!error); }
     function showPreview() {
       if (!root.isConnected) return;
-      preview.update(building);
+      if (previewPanel.open) {
+        preview ||= window.FloorPlanUI.createViewer(root.querySelector('[data-building-viewer]'), building, 'Combined building preview', { editable: true });
+        preview.update(building);
+      }
       root.querySelector('[data-floor-summary]').textContent = G.floorsOf(building).map(f => `${f.name}: ${f.plan ? `${f.elevation.toFixed(1)} ft elevation` : 'drawing needed'}`).join(' · ');
     }
     function capture() {
@@ -66,6 +71,7 @@
     mount();
     if (window.FloorPlanDesign) {
       const designRoot = root.querySelector('[data-building-designer]'); designRoot.hidden = false;
+      root.querySelector('[data-building-design]').hidden = false;
       designer = window.FloorPlanDesign.createControls(designRoot, {
         getModel() { capture(); return building; }, peekModel: () => building,
         applyModel(next) { building = G.validate(next); count.value = building.floors.length; mount(); report(); },
