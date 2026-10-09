@@ -11,7 +11,7 @@ const plan = published => ({ version: 1, image, published, width: 24, depth: 20,
 test('upcoming projects retain estimates and models without altering existing homes; auth avoids unused store reads', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mdu-upcoming-test-'));
   fs.mkdirSync(path.join(dir, 'public'));
-  for (const file of ['server.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
+  for (const file of ['server.js', 'seo.js', 'public/page-seo.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
   for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL', 'TELEGRAM_BOT_TOKEN']) delete process.env[key];
   process.env.ADMIN_PASSWORD = 'upcoming-test-only';
   const server = require(path.join(dir, 'server.js'));

@@ -236,7 +236,7 @@ test('standalone 3D projects persist separately, support empty drafts, and respe
   // Isolated fixture server: never touches the workspace store or a real Supabase project.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mdu-floor-plan-test-'));
   fs.mkdirSync(path.join(dir, 'public'));
-  for (const file of ['server.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
+  for (const file of ['server.js', 'seo.js', 'public/page-seo.js', 'telegram-bot.js', 'public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname, '..', file), path.join(dir, file));
   const keys = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL', 'ADMIN_PASSWORD'];
   const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   keys.forEach(key => { delete process.env[key]; }); process.env.ADMIN_PASSWORD = 'floor-plan-test';

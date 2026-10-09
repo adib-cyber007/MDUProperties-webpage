@@ -260,16 +260,19 @@ async function writeStore(data) {
       reportSupabaseFailure(error);
       throw Object.assign(new Error('Listing storage is temporarily unavailable. Your changes were not saved.'), { status: 503 });
     }
+    invalidateSeoStore();
     return;
   }
   if (process.env.VERCEL) {
     serverlessStore = data;
+    invalidateSeoStore();
     return;
   }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const temp = `${STORE_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(data, null, 2), 'utf8');
   fs.renameSync(temp, STORE_FILE);
+  invalidateSeoStore();
 }
 
 async function loadTelegramState(ownerId) {
@@ -329,6 +332,7 @@ function sendJson(res, status, body, extraHeaders = {}) {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(payload),
     'Cache-Control': 'no-store',
+    'X-Robots-Tag': 'noindex',
     ...extraHeaders
   });
   res.end(payload);
@@ -885,25 +889,52 @@ function sendText(req, res, status, type, body, cache) {
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 
+// Share concurrent public SEO reads; owner operations always use fresh storage.
+const SEO_CACHE_MS = 15000;
+let seoStoreCache = null, seoStoreInFlight = null, seoStoreRevision = 0;
+function invalidateSeoStore() {
+  ++seoStoreRevision; seoStoreCache = null; seoStoreInFlight = null;
+}
+async function readSeoStore() {
+  if (seoStoreCache && Date.now() < seoStoreCache.expires) return seoStoreCache.store;
+  if (seoStoreInFlight) return seoStoreInFlight;
+  const revision = seoStoreRevision;
+  const pending = (async () => {
+    // A remote failure must not turn demonstration properties into indexed pages.
+    const full = await (USE_SUPABASE ? readStoreForManagement() : readStore());
+    const store = { ...full, models: (full.models || []).filter(publishedModel) };
+    if (revision === seoStoreRevision) seoStoreCache = { store, expires: Date.now() + SEO_CACHE_MS };
+    return store;
+  })();
+  seoStoreInFlight = pending;
+  try { return await pending; }
+  finally { if (seoStoreInFlight === pending) seoStoreInFlight = null; }
+}
+
 async function serveSeo(req, res, url) {
   const origin = seo.siteOrigin(req);
   if (url.pathname === '/robots.txt') return sendText(req, res, 200, 'text/plain; charset=utf-8', seo.robotsTxt(origin), 'public, max-age=3600');
+  if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+    const page = seo.describePage('/admin', {}, origin);
+    res.setHeader('X-Robots-Tag', page.robots);
+    return sendText(req, res, 200, 'text/html; charset=utf-8', seo.renderHtml(page, origin), 'no-store');
+  }
   let store;
   try {
-    const full = await readStore();
-    store = { ...full, models: (full.models || []).filter(publishedModel) };
+    store = await readSeoStore();
   } catch (error) {
     console.error(error);
-    if (url.pathname === '/sitemap.xml') return sendJson(res, 503, { error: 'Sitemap temporarily unavailable.' });
-    return serveStatic(req, res, url);
+    if (url.pathname === '/sitemap.xml' || url.pathname.startsWith('/media/')) return sendJson(res, 503, { error: 'Public content temporarily unavailable.' });
+    const page = { ...seo.describePage('/', {}, origin), status: 503, canonicalPath: url.pathname, robots: 'noindex, follow', title: 'Temporarily unavailable', description: 'Please try again shortly.', body: '<div class="seo-prerender"><h1>Temporarily unavailable</h1><p>Please try again shortly.</p></div>', jsonLd: [] };
+    return sendText(req, res, 503, 'text/html; charset=utf-8', seo.renderHtml(page, origin), 'no-store');
   }
   if (url.pathname.startsWith('/media/')) {
     const media = seo.decodeMedia(store, url.pathname);
     if (!media) return sendJson(res, 404, { error: 'Image not found.' });
-    res.writeHead(200, { 'Content-Type': media.type, 'Content-Length': media.body.length, 'Cache-Control': 'public, max-age=86400', ...securityHeaders() });
+    res.writeHead(200, { 'Content-Type': media.type, 'Content-Length': media.body.length, 'Cache-Control': 'public, max-age=60', ...securityHeaders() });
     return res.end(req.method === 'HEAD' ? undefined : media.body);
   }
-  if (url.pathname === '/sitemap.xml') return sendText(req, res, 200, 'application/xml; charset=utf-8', seo.sitemapXml(store, origin), 'public, max-age=3600');
+  if (url.pathname === '/sitemap.xml') return sendText(req, res, 200, 'application/xml; charset=utf-8', seo.sitemapXml(store, origin), 'public, max-age=60');
   const page = seo.describePage(url.pathname === '/index.html' ? '/' : url.pathname, store, origin);
   const extra = page.robots.startsWith('noindex') ? { 'X-Robots-Tag': page.robots } : {};
   const body = seo.renderHtml(page, origin);

@@ -49,7 +49,7 @@ test('unsafe texture sources, malformed colors and excessive image budgets are r
 test('saved finishes round-trip through private and public project APIs without changing other projects', async t => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mdu-finishes-'));
   fs.mkdirSync(path.join(dir,'public'));
-  for(const file of ['server.js','telegram-bot.js','public/floor-plan-geometry.js'])fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
+  for(const file of ['server.js', 'seo.js', 'public/page-seo.js','telegram-bot.js','public/floor-plan-geometry.js'])fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
   const keys=['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','VERCEL','ADMIN_PASSWORD'];
   const env=Object.fromEntries(keys.map(k=>[k,process.env[k]]));keys.forEach(k=>delete process.env[k]);process.env.ADMIN_PASSWORD='finish-test';
   const server=require(path.join(dir,'server.js'));

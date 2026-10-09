@@ -38,7 +38,7 @@ test('unavailable services, unsafe URLs, oversized responses and invalid geometr
 
 test('recognition route requires owner access and same-origin writes, and leaves stored projects unchanged', async t => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mdu-recognition-')); fs.mkdirSync(path.join(dir,'public'));
-  for(const file of ['server.js','telegram-bot.js','floor-plan-recognition.js','public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
+  for(const file of ['server.js', 'seo.js', 'public/page-seo.js','telegram-bot.js','floor-plan-recognition.js','public/floor-plan-geometry.js']) fs.copyFileSync(path.join(__dirname,'..',file),path.join(dir,file));
   const keys=['ADMIN_PASSWORD','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','VERCEL','FLOORPLAN_RECOGNITION_URL'];
   const saved=Object.fromEntries(keys.map(k=>[k,process.env[k]])); keys.forEach(k=>delete process.env[k]); process.env.ADMIN_PASSWORD='recognition-test';
   const server=require(path.join(dir,'server.js')); await new Promise(r=>server.listen(0,'127.0.0.1',r));

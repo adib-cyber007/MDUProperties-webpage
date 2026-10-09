@@ -53,7 +53,19 @@ Set `NODE_ENV=production` and `ADMIN_PASSWORD`. The server then binds to `0.0.0.
 
 The model viewer runs on the visitor's device. Larger model/image uploads should use a Node host with adequate request limits; keep Vercel saves within its [4.5 MB request limit](https://vercel.com/docs/functions/limitations#request-body-size).
 
-## Verification
+## Search visibility
+
+Public pages serve listing text, page-specific metadata, structured data and crawlable photo URLs before JavaScript runs. Browser navigation updates the same metadata rules, including clearing owner-page `noindex` when returning to a public page. If public API requests fail, the initial page content stays readable.
+
+`/robots.txt` permits the public settings, listings, projects and models APIs needed for rendering. Other APIs and owner pages are excluded; JSON API responses also carry `X-Robots-Tag: noindex`. `/sitemap.xml` includes individual published 3D showcases as well as property and portfolio pages. Draft model titles and URLs are omitted.
+
+SEO data uses a 15-second cache per server instance, shares concurrent reads and clears after successful saves. Owner sign-in HTML does not query storage, and management/API reads remain fresh. Other instances see changes within 15 seconds; sitemap and image HTTP caches last at most 60 seconds. Remote storage failures return HTTP 503 rather than indexing demonstration homes.
+
+Optionally set the server-only `SITE_URL` to the preferred public origin, such as `https://mdu-properties-webpage.vercel.app`, to keep canonical URLs consistent across aliases. After deployment, verify that origin in Google Search Console and submit `/sitemap.xml`. Indexing and ranking depend on Google; these changes supply accessible content and metadata.
+
+Run `npm run test:seo:browser` for crawler-resource access, HTML fallback, navigation metadata, model discovery/privacy and mobile checks against isolated synthetic data.
+
+## Verification commands
 
 ```text
 npm run check
