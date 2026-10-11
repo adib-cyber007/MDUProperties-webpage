@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { furnitureModel } from './furniture-3d.ts';
+import { createFurnitureMaterials } from './furniture-materials.js';
 import { frameBounds } from './view-framing.cjs';
 import { createWalkCollision, walkthroughStart, walkthroughStep } from './floor-plan-walkthrough.cjs';
 
@@ -156,6 +157,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     if (!window.FloorPlanGeometry.hasGeometry(plan)) { schedule(); return; }
     content.userData = { units: 'metres', wallView: walking || fullWalls ? 'full' : 'cutaway', ceilingVisible: walking || showCeiling };
     const building = plan;
+    const furnitureSurface = createFurnitureMaterials(materials, textures);
     for (const floor of window.FloorPlanGeometry.floorsOf(building)) {
     const plan = floor.plan;
     if (!plan?.walls?.length) continue;
@@ -239,7 +241,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       const w = item.width * FT, d = item.depth * FT;
       const model = furnitureModel({ id: String(index), type: typeMap[item.type] || item.type, w, h: d,
         x: (item.center[0] - .5) * width - w / 2, y: (item.center[1] - .5) * depth - d / 2,
-        rotation: item.rotation, color: colors[item.type] || '#b7a58b' }, materials, sourceGeometries);
+        rotation: item.rotation, color: colors[item.type] || '#b7a58b' }, materials, sourceGeometries, furnitureSurface);
       model.updateMatrixWorld(true);
       picks.push({ index, bounds: new THREE.Box3().setFromObject(model).translate(group.position) });
       model.traverse(object => {

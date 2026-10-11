@@ -14,7 +14,7 @@
   function loadRenderer() {
     if (window.FloorPlanRenderer) return Promise.resolve();
     if (!rendererPromise) rendererPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=16';
+      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=17';
       script.onload = resolve;
       script.onerror = () => { script.remove(); rendererPromise = null; reject(new Error('The 3D viewer could not load. Check your connection and choose Retry.')); };
       document.head.append(script);

@@ -2,13 +2,19 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 // Adapted from the owner's FLRplanner Furniture3D models; dimensions are metres.
 type Item = { id: string; type: string; w: number; h: number; x: number; y: number; rotation: number; color: string };
-export function furnitureModel(item: Item, materials: Map<string, THREE.MeshStandardMaterial>, geometries: Map<string, THREE.BufferGeometry>): THREE.Group {
+export function furnitureModel(item: Item, materials: Map<string, THREE.MeshStandardMaterial>, geometries: Map<string, THREE.BufferGeometry>, surface?: (color: string, kind?: string) => THREE.MeshStandardMaterial): THREE.Group {
   const group = new THREE.Group();
   group.userData = { kind: "item", id: item.id };
   const w = item.w,
     d = item.h,
     c = item.color;
   const material = (color: string) => {
+    if (surface) {
+      const kind = ['#817c69', '#81948a', '#879993', '#80765e', '#948671'].includes(color) ? 'metal' :
+        ['#e0dfd4', '#f1f2e8', '#f6f6ee', '#f5f3eb', '#ccd8d2', '#becdca'].includes(color) ? 'ceramic' :
+        ['kitchen', 'wardrobe', 'coffee', 'dining', 'stairs'].includes(item.type) || ['#a89b83', '#827563'].includes(color) ? 'wood' : 'fabric';
+      return surface(color, kind);
+    }
     if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
     return materials.get(color)!;
   };
@@ -354,6 +360,46 @@ export function furnitureModel(item: Item, materials: Map<string, THREE.MeshStan
     for (let k = 0; k < 12; k++)
       box(0, 0, (k * d) / 12, w, (k + 1) * 0.2, d / 12, c, 0);
   } else box(0, 0, 0, w, 0.5, d, c);
+  // Modelled joinery, seams and hardware add scale cues at eye level.
+  if (['kitchen', 'sink', 'wardrobe'].includes(item.type)) {
+    const height = item.type === 'wardrobe' ? 2.1 : .88, n = Math.max(1, Math.ceil(w / .55));
+    for (let i = 0; i < n; i++) {
+      const x = i * w / n;
+      box(x + .008, .12, d - .012, w / n - .016, height - .16, .024, c, .008);
+      box(x + w / n * .65, height * .7, d + .024, Math.min(.12, w / n * .22), .014, .025, '#817c69', .004);
+      if (item.type === 'kitchen') box(x + .012, .65, d + .014, w / n - .024, .008, .008, '#80765e', 0);
+    }
+    box(.025, .025, d - .055, w - .05, .07, .035, '#555f57', .003);
+    if (item.type === 'kitchen') {
+      box(.02, .925, .005, w - .04, .12, .025, '#e0dfd4', .003);
+      const hob = box(w * .57, .927, d * .18, w * .35, .012, d * .65, '#36433c', .009);
+      if (surface) hob.material = surface('#343634', 'ceramic');
+      for (const x of [.65, .84]) for (const z of [.35, .66]) cylinder(w * x, .943, d * z, Math.min(w * .045, d * .11), .004, '#817c69');
+    }
+  }
+  if (['sofa', 'armchair', 'bed'].includes(item.type)) {
+    const n = item.type === 'bed' ? 2 : 3;
+    for (let i = 0; i < n; i++) {
+      const pillow = box(w * (.12 + i * .25), item.type === 'bed' ? .58 : .5, d * .12,
+        Math.min(.38, w * .2), .22, Math.min(.15, d * .17), i % 2 ? '#d3c4a9' : '#e5dfcf', .07);
+      pillow.rotation.z = (i % 2 ? 1 : -1) * .13;
+    }
+    if (item.type === 'bed') for (let i = 0; i < 5; i++) box(.05, .561, d * (.38 + i * .08), w - .1, .005, .007, '#b9b3a4', .002);
+    else for (const y of [.33, .46]) box(.16, y, d - .025, Math.max(.03, w - .32), .006, .007, '#c9cec2', .002);
+  }
+  if (item.type === 'toilet') {
+    const geo = new THREE.TorusGeometry(w * .32, .025, 8, 32); const ring = new THREE.Mesh(geo, material('#f6f6ee'));
+    ring.rotation.x = Math.PI / 2; ring.scale.y = 1.25; ring.position.set(0, .435, d * .1); group.add(ring);
+    box(w * .43, .72, d * .09, w * .14, .012, .055, '#817c69', .004);
+  }
+  if (item.type === 'sink') {
+    const geo = new THREE.TorusGeometry(.085, .012, 8, 20, Math.PI), tap = new THREE.Mesh(geo, surface ? surface('#879993', 'metal') : material('#879993'));
+    tap.rotation.y = Math.PI / 2; tap.position.set(0, 1.13, -d * .25); group.add(tap);
+  }
+  if (item.type === 'shower') {
+    cylinder(w * .2, .15, .06, .012, 1.65, '#81948a');
+    box(w * .55, 1, d - .02, .018, .22, .025, '#81948a', .005);
+  }
   group.position.set(item.x + w / 2, 0, item.y + d / 2);
   group.rotation.y = (-item.rotation * Math.PI) / 180;
   return group;
