@@ -184,6 +184,24 @@
 .fp-source-settings .form-section h2 { font-size: 1rem; }
 .fp-source-settings .fp-recognition-pipeline { border: 0; padding: 0; margin-block: 12px; }
 .fp-source-settings .fp-recognition-pipeline small { font-size: .78rem; }
+.fp-room-tour { padding: 18px 0 12px; border-bottom: 1px solid var(--line, #d8e0ea); margin-bottom: 12px; }
+.fp-room-tour h3 { margin: 0 0 10px; font-size: 1rem; }
+.fp-room-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.fp-room-button { padding: 10px 16px; border: 1px solid #bbc9c4; border-radius: 6px; background: #fff; color: #263d35; font: inherit; font-size: .85rem; cursor: pointer; min-height: 44px; }
+.fp-room-button:hover { background: #edf3ef; }
+.fp-room-button[aria-pressed="true"] { background: #263d35; color: #fff; border-color: #263d35; }
+.fp-room-button:focus-visible { outline: 3px solid #b17a3b; outline-offset: 3px; }
+.fp-room-notes { margin: 12px 0 0; max-width: 80ch; font-size: .86rem; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+.fp-lighting { display: flex; align-items: center; gap: 6px; font-size: .82rem; }
+.fp-lighting select { min-height: 36px; padding: 5px 8px; }
+.fp-presentation-panel fieldset { min-width: 0; padding: 16px 0; border: 0; border-top: 1px solid var(--line, #d8e0ea); margin: 20px 0 0; }
+.fp-presentation-panel legend { font-size: .93rem; font-weight: 600; padding: 0 10px 0 0; }
+.fp-presentation-panel label { display: grid; gap: 6px; margin-bottom: 12px; font-size: .85rem; }
+.fp-presentation-panel .fp-snap { display: flex; }
+.fp-presentation-panel input:not([type="checkbox"]), .fp-presentation-panel select, .fp-presentation-panel textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #cbd5d0; border-radius: 6px; background: #fff; font: inherit; }
+.fp-presentation-panel .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fp-view-expanded { overflow-y: auto; }
+@media (max-width: 480px) { .fp-presentation-panel .form-grid { grid-template-columns: minmax(0, 1fr); } .fp-room-button { flex-grow: 1; padding-inline: 10px; } }
 .fp-status:empty { display: none; }
 .fp-editor-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 24px; margin-top: 20px; }
 .fp-editor-main, .fp-preview-panel { min-width: 0; }

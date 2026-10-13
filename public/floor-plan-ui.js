@@ -14,7 +14,7 @@
   function loadRenderer() {
     if (window.FloorPlanRenderer) return Promise.resolve();
     if (!rendererPromise) rendererPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=16';
+      const script = document.createElement('script'); script.src = '/floor-plan-renderer.js?v=17';
       script.onload = resolve;
       script.onerror = () => { script.remove(); rendererPromise = null; reject(new Error('The 3D viewer could not load. Check your connection and choose Retry.')); };
       document.head.append(script);
@@ -48,6 +48,7 @@
         <button type="button" data-walk="s" aria-label="Walk backward">↓</button>
         <button type="button" data-walk="d" aria-label="Walk right">→</button>
       </div></div>
+      <div class="fp-room-tour" hidden><h3>Explore this home</h3><div class="fp-room-buttons" role="group" aria-label="Room viewpoints"></div><p class="fp-room-notes" role="status" aria-live="polite"></p></div>
       <div class="fp-view-controls" role="group" aria-label="3D view controls">
         <button type="button" class="btn btn-outline btn-small" data-view="walk" aria-pressed="false">Walk through</button>
         <label class="fp-floor-view" hidden>View <select aria-label="View floor"></select></label>
@@ -60,6 +61,7 @@
         <button type="button" class="btn btn-outline btn-small" data-view="ceiling-view">Ceiling view</button>
         <button type="button" class="btn btn-outline btn-small" data-view="png">Save image</button>
         ${editable ? '<button type="button" class="btn btn-outline btn-small" data-view="glb">Download detailed 3D (.glb)</button>' : ''}
+        <label class="fp-lighting">Lighting <select aria-label="Preview lighting"><option value="day">Daylight</option><option value="evening">Evening</option></select></label>
         <label class="fp-quality">Rendering <select aria-label="3D rendering quality"><option value="auto">Auto</option><option value="high">High quality</option><option value="fast">Fast</option></select></label>
         <button type="button" class="btn btn-outline btn-small" data-view="retry" hidden>Retry</button>
       </div><p class="fp-view-help">Drag to orbit · Scroll or pinch to zoom · Right-drag or two-finger drag to pan. Arrow keys rotate; Home resets. Ceiling view looks upward from inside; Reset view returns to the overview. ${editable ? 'Click furniture in 3D to select it.' : ''}</p>`;
@@ -92,6 +94,11 @@
     function viewChanged(state = renderer?.getViewState()) {
       if (!state) return;
       const walking = state.walking;
+      root.querySelector('.fp-lighting select').value = state.lighting || 'day';
+      const selected = state.selectedView;
+      root.querySelectorAll('[data-room-view]').forEach(button => button.setAttribute('aria-pressed', String(!!selected && button.dataset.roomFloor === String(selected.floor) && button.dataset.roomView === String(selected.index))));
+      const view = selected && renderer.roomViews().find(v => v.floor === selected.floor && v.index === selected.index);
+      root.querySelector('.fp-room-notes').textContent = view ? [view.name, view.width && view.depth ? `${view.width} × ${view.depth} ft (owner-entered)` : '', view.notes].filter(Boolean).join(' — ') : 'Choose a room to look around at eye level.';
       root.classList.toggle('fp-walking', walking);
       root.querySelector('.fp-walk-controls').hidden = !walking;
       const button = root.querySelector('[data-view="walk"]');
@@ -108,6 +115,18 @@
       root.querySelector('.fp-view-help').textContent = help;
       canvas.setAttribute('aria-label', `${title}. ${help}`);
     }
+    function syncRoomButtons() {
+      const views = G.floorsOf(plan).flatMap(f => (f.plan?.presentation?.views || []).map((view, index) => ({ ...view, floor: f.index, floorName: f.name, index })));
+      root.querySelector('.fp-room-tour').hidden = !views.length;
+      root.querySelector('.fp-room-buttons').replaceChildren(...views.map(view => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'fp-room-button';
+        button.dataset.roomView = view.index; button.dataset.roomFloor = view.floor; button.setAttribute('aria-pressed', 'false');
+        button.textContent = view.name + (G.floorsOf(plan).length > 1 ? ` · ${view.floorName}` : '');
+        button.disabled = !renderer;
+        button.onclick = () => { notice.hidden = true; renderer?.focusView(view.floor, view.index); viewChanged(); };
+        return button;
+      }));
+    }
     async function sync() {
       if (disposed) return;
       const ready = G.hasGeometry(plan);
@@ -117,7 +136,7 @@
       floorSelect.replaceChildren(new Option('All floors', 'all'));
       G.floorsOf(plan).forEach(floor => floorSelect.add(new Option(floor.name, String(floor.index))));
       floorSelect.value = [...floorSelect.options].some(o => o.value === selectedFloor) ? selectedFloor : 'all';
-      controlsEnabled(ready && !!renderer);
+      controlsEnabled(ready && !!renderer); syncRoomButtons();
       if (!ready) { renderer?.update(plan); controlsEnabled(false); notice.hidden = false; notice.textContent = 'Upload a drawing and review detected walls to build the preview.'; return; }
       if (renderer) { notice.hidden = true; renderer.update(plan); renderer.setFloor(floorSelect.value); viewChanged(); return; }
       if (loading) return;
@@ -127,7 +146,7 @@
         if (disposed) return;
         renderer = window.FloorPlanRenderer(canvas, { onSelectFurniture, onError: error, onRestore: () => { notice.hidden = true; }, onViewChange: viewChanged });
         canvas.dataset.engine = 'three';
-        renderer.update(plan); renderer.setFloor(floorSelect.value); notice.hidden = G.hasGeometry(plan); controlsEnabled(G.hasGeometry(plan)); viewChanged();
+        renderer.update(plan); renderer.setFloor(floorSelect.value); notice.hidden = G.hasGeometry(plan); controlsEnabled(G.hasGeometry(plan)); syncRoomButtons(); viewChanged();
       } catch (failure) { error(failure.message || '3D needs WebGL 2. Enable hardware acceleration and reload the page.'); retry.hidden = false; }
       finally { loading = false; }
     }
@@ -148,6 +167,7 @@
     }
     root.querySelectorAll('[data-view]').forEach(button => button.onclick = () => viewAction(button.dataset.view));
     root.querySelector('.fp-quality select').onchange = event => renderer?.setQuality(event.target.value);
+    root.querySelector('.fp-lighting select').onchange = event => renderer?.setLighting(event.target.value);
     root.querySelector('.fp-floor-view select').onchange = event => { notice.hidden = true; renderer?.setFloor(event.target.value); if (renderer?.getViewState().walking) canvas.focus({ preventScroll: true }); };
     root.querySelectorAll('[data-walk]').forEach(button => {
       const release = () => { button.classList.remove('fp-walk-held'); renderer?.move(button.dataset.walk, false); };
@@ -166,7 +186,7 @@
     let plan = initial ? G.validate(initial) : null;
     let pending = null, cursor = null, selected = -1, selectedFurniture = -1, tool = 'wall', history = [], uploading = false, image = null, suggestions = [];
     let uploadVersion = 0, autoOnLoad = false, editRevision = 0, analysis = null, useLargeInitialScale = false;
-    let paintControls = null, tileControls = null;
+    let paintControls = null, tileControls = null, presentationControls = null;
     let recognitionReady = false;
     let scanSavedOpenings = !!initial && (initial.openingDetectionVersion || 0) < 4;
     root.innerHTML = `<div class="form-section"><h2>Floor plan to 3D</h2><p>Upload a clear floor-plan drawing to generate a first 3D layout automatically. Review the detected walls, dimensions and openings before publishing.</p></div>
@@ -254,7 +274,8 @@
     const traceHelp = document.createElement('details'); traceHelp.className = 'workspace-disclosure';
     traceHelp.innerHTML = '<summary>How to edit the drawing</summary>';
     traceHelp.append(tracing.querySelector('.fp-trace-help')); tracing.append(traceHelp);
-    mainPanel.append(setup, tracing, finishes, furniture, drawing);
+    const presentation = document.createElement('section');
+    mainPanel.append(setup, tracing, finishes, furniture, presentation, drawing);
     layout.append(mainPanel, previewPanel);
     root.querySelector('.fp-panels').remove();
     workspace.prepend(layout);
@@ -262,9 +283,10 @@
       { key: 'setup', title: 'Drawing & scale', panel: setup },
       { key: 'layout', title: 'Walls & openings', panel: tracing },
       { key: 'finishes', title: 'Finishes', panel: finishes },
-      { key: 'furniture', title: 'Furniture', panel: furniture }
+      { key: 'furniture', title: 'Furniture', panel: furniture },
+      { key: 'presentation', title: 'Architecture & tour', panel: presentation }
     ], { label: 'Floor editor tools', initial: plan?.scaleConfirmed === false ? 'setup' : 'layout', onSelect(key) {
-      if (key === 'finishes' || key === 'furniture' || (key === 'layout' && ['scale', 'furniture'].includes(tool))) {
+      if (key === 'finishes' || key === 'furniture' || key === 'presentation' || (key === 'layout' && ['scale', 'furniture', 'viewpoint'].includes(tool))) {
         tool = 'select'; pending = cursor = null;
         root.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === tool)));
       }
@@ -279,8 +301,13 @@
     finishOptions.append(finishes.querySelector('.fp-wall-sides'));
     finishes.append(finishOptions);
     const canvas = root.querySelector('.fp-trace-canvas'), ctx = canvas.getContext('2d');
+    root.querySelector('.fp-item-fields').insertAdjacentHTML('beforeend', '<div class="field"><label for="fp-item-height">Height / stair rise (ft, optional)</label><input id="fp-item-height" type="number" min=".1" max="25" step=".1"><small>Leave blank for the model’s standard height. Ceiling lights mount below this floor’s ceiling.</small></div>');
     const viewer = createViewer(root.querySelector('[data-fp-viewer]'), plan, '3D floor-plan preview', { editable: true, onSelectFurniture(index) { editorTabs.select('furniture'); selectedFurniture = index; selected = -1; refresh(); } });
     const say = (message, error = false) => { status.textContent = message; status.classList.toggle('error-message', error); };
+    presentationControls = window.FloorPlanPresentation.create(presentation, { getPlan: () => plan,
+      commit(next) { const checked = G.validate(next); pushHistory(); plan = checked; refresh(); }, say,
+      place() { tool = 'viewpoint'; pending = cursor = null; root.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', 'false')); root.querySelector('[data-active-tool]').textContent = 'Click a clear standing position for this room viewpoint.'; canvas.scrollIntoView({ block: 'nearest', behavior: 'instant' }); say('Click a clear standing position on the drawing.'); }
+    });
     const recognitionStatus = fetch('/api/admin/floor-plan-recognition', { signal: AbortSignal.timeout(3500) })
       .then(async response => { if (!response.ok) return; const state = await response.json(); recognitionReady = state.ready === true; root.dataset.recognitionEngine=state.engine;
         root.dataset.visionConfigured=String(state.visionReview?.enabled===true);
@@ -487,7 +514,7 @@
       for (const action of ['update-furniture','delete-furniture']) root.querySelector(`[data-action="${action}"]`).disabled=selectedFurniture<0;
       if (selectedFurniture>=0) {
         const item=plan.furniture[selectedFurniture];
-        for (const [key,value] of Object.entries({type:item.type,x:item.center[0]*plan.width,y:item.center[1]*plan.depth,width:item.width,depth:item.depth,rotation:item.rotation})) root.querySelector(`#fp-item-${key}`).value=typeof value==='number' ? +value.toFixed(2) : value;
+        for (const [key,value] of Object.entries({type:item.type,x:item.center[0]*plan.width,y:item.center[1]*plan.depth,width:item.width,depth:item.depth,rotation:item.rotation,height:item.height ?? ''})) root.querySelector(`#fp-item-${key}`).value=typeof value==='number' ? +value.toFixed(2) : value;
       }
       renderSuggestions();
       syncFinishControls();
@@ -536,9 +563,15 @@
         ctx.fillText(G.FURNITURE[item.type].label,0,0,Math.max(20,w-4)); ctx.restore();
       });
       suggestions.forEach(item=>{ ctx.save(); ctx.setLineDash([5,4]); ctx.strokeStyle='#976321'; ctx.lineWidth=2; ctx.strokeRect(item.center[0]*width-item.width/plan.width*width/2,item.center[1]*height-item.depth/plan.depth*height/2,item.width/plan.width*width,item.depth/plan.depth*height); ctx.restore(); });
+      (plan.presentation?.views || []).forEach((view, index) => {
+        ctx.save(); ctx.translate(view.center[0] * width, view.center[1] * height); ctx.rotate(-view.heading * Math.PI / 180);
+        ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(-6,-13); ctx.lineTo(6,-13); ctx.closePath(); ctx.fillStyle='#236557'; ctx.fill();
+        ctx.rotate(view.heading * Math.PI / 180); ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(index+1),0,0); ctx.restore();
+      });
       if (pending) { ctx.beginPath(); ctx.arc(pending[0] * width, pending[1] * height, 6, 0, Math.PI * 2); ctx.fillStyle = '#f97316'; ctx.fill(); if (cursor) line(pending, cursor, '#f97316', true); }
     }
-    function refresh() { syncControls(); draw(); viewer.update(plan); onChange?.(plan); }
+    function refresh() { presentationControls?.sync(); syncControls(); draw(); viewer.update(plan); onChange?.(plan); }
     function loadImage() {
       const next = new Image(); image = next;
       next.onload = () => { if (image === next) { syncControls(); draw(); if (autoOnLoad) {
@@ -731,7 +764,7 @@
     function point(e) {
       const rect = canvas.getBoundingClientRect();
       let p = [clamp((e.clientX - rect.left) / rect.width, 0, 1), clamp((e.clientY - rect.top) / rect.height, 0, 1)];
-      if (tool === 'scale' || tool === 'furniture' || tool === 'select') return p;
+      if (tool === 'scale' || tool === 'furniture' || tool === 'select' || tool === 'viewpoint') return p;
       for (const w of plan.walls) for (const end of [w.a, w.b]) if (Math.hypot((end[0] - p[0]) * rect.width, (end[1] - p[1]) * rect.height) < 9) return [...end];
       if (pending && root.querySelector('[data-snap]').checked) {
         if (Math.abs(p[0] - pending[0]) * rect.width < Math.abs(p[1] - pending[1]) * rect.height) p[0] = pending[0]; else p[1] = pending[1];
@@ -752,6 +785,7 @@
     canvas.onclick = e => {
       if (!plan || !image?.naturalWidth || analysis ) return;
       const p = point(e);
+      if (tool === 'viewpoint') { presentationControls.setCenter(p); tool = 'select'; root.querySelector('[data-active-tool]').textContent = 'Position selected. Save the viewpoint in Architecture & tour.'; return; }
       if (tool === 'furniture') {
         try {
           const type=root.querySelector('#fp-place-type').value, preset=G.FURNITURE[type];
@@ -819,6 +853,7 @@
         try {
           const value=key=>Number(root.querySelector(`#fp-item-${key}`).value);
           const item={...plan.furniture[selectedFurniture],type:root.querySelector('#fp-item-type').value,center:[value('x')/plan.width,value('y')/plan.depth],width:value('width'),depth:value('depth'),rotation:value('rotation')};
+          if (root.querySelector('#fp-item-height').value !== '') item.height = value('height'); else delete item.height;
           const next=plan.furniture.slice(); next[selectedFurniture]=item; G.validate({...plan,furniture:next});
           pushHistory(); plan.furniture=next; refresh(); say('Item updated. Save the project to keep this change.');
         } catch(error) { say(error.message,true); }

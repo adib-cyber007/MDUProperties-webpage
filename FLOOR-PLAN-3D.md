@@ -1,5 +1,50 @@
 # Floor-plan 3D previews
 
+## Local realism and guided-room preview
+
+Run `npm run preview:realism` to open an isolated demonstration at
+`http://127.0.0.1:43822`. The command prints the furnished home's direct URL.
+It copies the application into ignored `work/`, creates a synthetic drawing and
+uses a separate local store. Owner sign-in for this demonstration is
+`realism-preview`; production credentials are cleared. Stop this process with
+Ctrl+C when the review is finished. It does not publish or deploy the website.
+
+The renderer includes locally generated wood/fabric surface maps, image-based
+lighting, contact shadows and ambient occlusion. Auto enables ambient occlusion
+on desktop scenes with at most 45 furnishings; mobile Auto and Fast omit the
+effect. High quality enables it explicitly. Daylight/evening lighting is available
+in every viewer; placed floor lamps and ceiling lights illuminate evening views.
+Furniture uses more detailed procedural geometry, including cabinetry, handles,
+upholstery seams and pillows, taps, folded curtains and bathroom fittings. These
+are illustrative models, not scans of a manufacturer's products.
+
+In every floor editor, **Architecture & tour** controls skirting, door architraves,
+hardware and window sills. Choose no roof, a flat roof with parapets, or a pitched
+roof. Roofs use a schematic rectangular footprint and appear only on the top
+populated floor with full walls; cutaway view removes them. Review irregular
+buildings against an elevation drawing. **Furniture** adds curtains, floor and
+ceiling lights, a shower, bathtub, plants, rugs, stairs and railings. Existing
+width/depth/rotation controls remain available, with optional height/stair rise.
+Stairs are presentation geometry; they do not cut slabs or provide movement
+between floors. Choose floors using the existing selector.
+
+Add up to 16 named viewpoints per floor in **Architecture & tour**. Enter a
+standing position in drawing-relative feet, or choose **Place viewpoint on
+drawing**, then set its direction (0 faces the drawing's top; positive angles
+turn left). Room dimensions are optional owner-entered values, and finish notes
+describe the intended specification. Save the viewpoint, test its room button,
+then save the project. Blocked standing positions show an error without moving
+the camera. The buttons select their corresponding floor and enter the
+walkthrough at eye level; Restart returns to the selected viewpoint and Exit
+restores the overview. No recognition service is required for saved tours.
+
+Architectural settings and viewpoints persist in each floor's optional
+`presentation` field. Legacy models remain valid. Layout JSON retains these
+settings; detailed GLB includes the decorative geometry and normal textures.
+OBJ remains a simplified geometry export, including the new fixture types.
+Use `npm run test:presentation:browser` for isolated save/reopen, room navigation,
+blocked-position, mobile, material and GLB verification.
+
 ## Pretrained floor plan recognition
 
 Run `npm run start:floorplan` to start the local CPU model service and this site.

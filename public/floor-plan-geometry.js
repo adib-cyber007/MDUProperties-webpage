@@ -16,6 +16,15 @@
     sink: { label: 'Sink', width: 2.5, depth: 2 },
     toilet: { label: 'Toilet', width: 2, depth: 2.5 },
     appliance: { label: 'Appliance', width: 2.5, depth: 2.5 },
+    curtains: { label: 'Curtains', width: 6, depth: .5 },
+    lamp: { label: 'Floor lamp', width: 1.5, depth: 1.5 },
+    ceiling_light: { label: 'Ceiling light', width: 2, depth: 2 },
+    shower: { label: 'Shower enclosure', width: 3, depth: 3 },
+    bath: { label: 'Bathtub', width: 2.5, depth: 5.5 },
+    plant: { label: 'Indoor plant', width: 2, depth: 2 },
+    rug: { label: 'Rug', width: 7, depth: 5 },
+    stairs: { label: 'Stairs (display only)', width: 3.5, depth: 12 },
+    railing: { label: 'Railing', width: 6, depth: .5 },
     other: { label: 'Other item', width: 3, depth: 3 }
   };
   const MAX_FURNITURE = 100;
@@ -130,10 +139,29 @@
           const depth = number(item.depth, .5, 15, 'Item depth in feet');
           const rotation = number(item.rotation, -180, 180, 'Item rotation in degrees');
           if (item.source !== undefined && !['detected', 'manual'].includes(item.source)) invalid('Item source is not supported.');
-          return { type: item.type, center: [...item.center], width, depth, rotation, source: item.source || 'manual' };
+          return { type: item.type, center: [...item.center], width, depth, rotation, source: item.source || 'manual',
+            ...(item.height !== undefined ? { height: number(item.height, .1, 25, 'Item height or stair rise in feet') } : {}) };
         });
       })()
     };
+    if (input.presentation !== undefined) {
+      const p = input.presentation;
+      if (!p || typeof p !== 'object' || Array.isArray(p)) invalid('Presentation settings must be an object.');
+      if (!['none', 'flat', 'pitched'].includes(p.roof ?? 'none')) invalid('Choose no roof, a flat roof or a pitched roof.');
+      for (const key of ['skirting', 'trims']) if (p[key] !== undefined && typeof p[key] !== 'boolean') invalid('Architectural detail settings must be true or false.');
+      if (!['day', 'evening'].includes(p.lighting ?? 'day')) invalid('Choose daylight or evening lighting.');
+      if (p.views !== undefined && (!Array.isArray(p.views) || p.views.length > 16)) invalid('Each floor can have up to 16 room viewpoints.');
+      plan.presentation = { skirting: p.skirting !== false, trims: p.trims !== false, roof: p.roof ?? 'none', lighting: p.lighting ?? 'day',
+        views: (p.views || []).map(view => {
+          if (!view || typeof view.name !== 'string' || !view.name.trim() || view.name.length > 60) invalid('Give each viewpoint a name of up to 60 characters.');
+          if (!Array.isArray(view.center) || view.center.length !== 2) invalid('Each viewpoint needs a position on the drawing.');
+          view.center.forEach(value => number(value, 0, 1, 'Viewpoint position'));
+          if (view.notes !== undefined && (typeof view.notes !== 'string' || view.notes.length > 600)) invalid('Finish notes can contain up to 600 characters.');
+          return { name: view.name.trim(), center: [...view.center], heading: number(view.heading, -180, 180, 'Viewing direction'), notes: view.notes || '',
+            ...(view.width !== undefined ? { width: number(view.width, .5, input.width, 'Room width in feet') } : {}),
+            ...(view.depth !== undefined ? { depth: number(view.depth, .5, input.depth, 'Room depth in feet') } : {}) };
+        }) };
+    }
     if (input.finishes !== undefined) {
       if (!input.finishes || typeof input.finishes !== 'object' || Array.isArray(input.finishes)) invalid('Surface finishes must describe walls, flooring or ceiling.');
       plan.finishes = {};
@@ -462,7 +490,20 @@
         add(0,0,w,d,0,2.6,'light'); add(0,0,w*.65,d*.65,2.6,2.68,'glass');
       } else if (item.type === 'wardrobe') add(0,0,w,d,0,Math.min(plan.height-1,7),'wood');
       else if (item.type === 'kitchen_counter') { add(0,0,w,d,0,2.7,'wood'); add(0,0,w,d,2.7,2.85,'light'); }
-      else add(0,0,w,d,0,item.type === 'appliance' ? 3 : 2.5,item.type === 'appliance' ? 'light' : 'furniture');
+      else if (item.type === 'rug') add(0,0,w,d,.01,.05,'fabric');
+      else if (item.type === 'curtains') add(0,0,w,d,.25,item.height || Math.min(8.5,plan.height-.5),'fabric');
+      else if (item.type === 'ceiling_light') add(0,0,w,d,plan.height-.5,plan.height-.15,'light');
+      else if (item.type === 'railing') {
+        const height = item.height || 3.5, n=Math.max(2,Math.ceil(w/.5));
+        add(0,0,w,.15,height-.12,height,'wood');
+        for(let i=0;i<=n;i++)add(-w/2+i*w/n,0,.08,.08,0,height,'wood');
+      } else if (item.type === 'stairs') {
+        const rise=item.height || plan.height, n=Math.max(3,Math.ceil(rise/.6));
+        for(let i=0;i<n;i++)add(0,-d/2+(i+.5)*d/n,w,d/n,0,(i+1)*rise/n,'wood');
+      } else if (item.type === 'lamp') add(0,0,w,d,0,item.height || 4.8,'light');
+      else if (item.type === 'shower') { add(0,0,w,d,0,.2,'light'); add(w/2-.05,0,.1,d,.2,item.height || 6.5,'glass'); }
+      else if (item.type === 'bath') add(0,0,w,d,0,item.height || 1.8,'light');
+      else add(0,0,w,d,0,item.height || (item.type === 'appliance' ? 3 : 2.5),item.type === 'appliance' ? 'light' : 'furniture');
     }
     return result;
   }

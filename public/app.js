@@ -403,7 +403,7 @@ async function renderAdmin() {
 }
 
 function renderLogin() {
-  main.innerHTML = `<section class="admin-page"><div class="login-wrap"><form class="login-card" id="login-form">${brandMarkup()}<span class="eyebrow">Owner access</span><h1>Welcome back.</h1><p class="muted">Sign in to manage listings and contact details.</p><div id="login-error"></div><div class="field"><label for="owner-password">Password</label><input id="owner-password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" style="width:100%;margin-top:18px" type="submit">Open dashboard ${icon('arrow')}</button><p class="login-note">Local demo password: <strong>aaranya-demo</strong>. Set <code>ADMIN_PASSWORD</code> before deploying.</p></form></div></section>`;
+  main.innerHTML = `<section class="admin-page"><div class="login-wrap"><form class="login-card" id="login-form">${brandMarkup()}<span class="eyebrow">Owner access</span><h1>Welcome back.</h1><p class="muted">Sign in to manage listings and contact details.</p><div id="login-error"></div><div class="field"><label for="owner-password">Password</label><input id="owner-password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" style="width:100%;margin-top:18px" type="submit">Open dashboard ${icon('arrow')}</button><p class="login-note">Use the owner password provided for this site.</p></form></div></section>`;
   document.querySelector('#login-form').addEventListener('submit', async event => {
     event.preventDefault();
     const button = event.currentTarget.querySelector('button[type=submit]');

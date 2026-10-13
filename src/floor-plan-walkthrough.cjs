@@ -74,7 +74,7 @@ function createWalkCollision(plan, geometry) {
     .filter(box => ['wall', 'glass', 'frame'].includes(box.material) &&
       (box.y - box.height / 2) * FT < CLEAR_HEIGHT && (box.y + box.height / 2) * FT > .05)
     .map(collisionBox);
-  for (const item of plan.furniture || []) obstacles.push(collisionBox({
+  for (const item of (plan.furniture || []).filter(item => !['rug', 'ceiling_light'].includes(item.type))) obstacles.push(collisionBox({
     x: (item.center[0] - .5) * plan.width, z: (item.center[1] - .5) * plan.depth,
     width: item.width, depth: item.depth, angle: item.rotation * Math.PI / 180
   }));

@@ -2,13 +2,20 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { furnitureModel } from './furniture-3d.ts';
+import { detailTexture, normalTexture, furnitureMaterials, contactShadowTexture } from './presentation-materials.js';
+import { architecturalDetails } from './architectural-details.js';
 import { frameBounds } from './view-framing.cjs';
 import { createWalkCollision, walkthroughStart, walkthroughStep } from './floor-plan-walkthrough.cjs';
 
 const FT = .3048;
 const typeMap = { dining_table: 'dining', table: 'coffee', kitchen_counter: 'kitchen', appliance: 'kitchen' };
-const colors = { bed: '#78988e', sofa: '#8fa699', chair: '#b9a388', wardrobe: '#b8a78f', kitchen_counter: '#b9b6a7', sink: '#d2d6ce', toilet: '#f1f2e8', appliance: '#dbe0dc' };
+const colors = { bed: '#8b9b98', sofa: '#a9a496', chair: '#b9a388', wardrobe: '#b8a78f', kitchen_counter: '#b3a18a', sink: '#d2d6ce', toilet: '#f1f2e8', appliance: '#dbe0dc' };
 
 // Static geometry stays on the GPU; camera motion only changes camera uniforms.
 window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRestore, onViewChange } = {}) {
@@ -21,16 +28,25 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   renderer.shadowMap.autoUpdate = false;
   const scene = new THREE.Scene(); scene.background = new THREE.Color('#edf0eb');
   const content = new THREE.Group(); scene.add(content);
-  const hemisphere = new THREE.HemisphereLight('#fffefa', '#d2cdc5', 2); scene.add(hemisphere);
-  const roomLight = new THREE.AmbientLight('#fff8ed', .65); roomLight.visible = false; scene.add(roomLight);
-  const sun = new THREE.DirectionalLight('#fff2db', 2.2); sun.position.set(-5, 18, 8); sun.castShadow = true;
+  const environmentScene = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer);
+  const environment = pmrem.fromScene(environmentScene, .04); environmentScene.dispose(); pmrem.dispose();
+  scene.environment = environment.texture; scene.environmentIntensity = .65;
+  const hemisphere = new THREE.HemisphereLight('#fffefa', '#b6a48c', .75); scene.add(hemisphere);
+  const roomLight = new THREE.AmbientLight('#fff8ed', .18); roomLight.visible = false; scene.add(roomLight);
+  const sun = new THREE.DirectionalLight('#fff2db', 2.6); sun.position.set(-5, 18, 8); sun.castShadow = true;
+  sun.shadow.radius = 3; sun.shadow.blurSamples = 8;
   sun.shadow.bias = -.0005; sun.shadow.normalBias = .025;
   scene.add(sun); scene.add(sun.target);
   const camera = new THREE.PerspectiveCamera(42, 1, .03, 1200);
+  const composer = new EffectComposer(renderer), renderPass = new RenderPass(scene, camera), aoPass = new GTAOPass(scene, camera), outputPass = new OutputPass();
+  aoPass.updateGtaoMaterial({ radius: .38, distanceExponent: 1.5, thickness: .35, samples: 16 }); aoPass.blendIntensity = .75;
+  composer.addPass(renderPass); composer.addPass(aoPass); composer.addPass(outputPass);
+  let aoEnabled = false; renderer.info.autoReset = false;
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.dampingFactor = .12;
   controls.maxPolarAngle = Math.PI * .49; controls.minDistance = .7; controls.maxDistance = 200;
-  const materials = new Map(), geometries = new Set(), textures = new Set();
+  const materials = new Map(), geometries = new Set(), textures = new Set(), detailMaps = new Map();
+  let lightingOverride = null, selectedView = null;
   let plan = null, fingerprint = '', fullWalls = true, showCeiling = false, ceilingView = false, quality = 'auto', frame = 0, visible = true, disposed = false, lost = false;
   let textureJobs = [];
   let fitted = false, cameraInteracted = false, renderCount = 0, buildCount = 0, picks = [], pointerStart = null, visibleFloor = 'all', dimensionFingerprint = '';
@@ -55,10 +71,11 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       const next = walkthroughStep({ x: camera.position.x - walkFloor.offsetX * FT, y: camera.position.z - walkFloor.offsetZ * FT }, delta.x, delta.z, collision.canWalk);
       camera.position.x = next.x + walkFloor.offsetX * FT; camera.position.z = next.y + walkFloor.offsetZ * FT;
     } else if (!walking) controls.update();
-    renderer.render(scene, camera); renderCount++;
+    drawScene(); renderCount++;
     if (walking && pressed.size) frame = requestAnimationFrame(render);
   }
   controls.addEventListener('change', schedule);
+  function drawScene() { renderer.info.reset(); if (aoEnabled) composer.render(); else renderer.render(scene, camera); }
   controls.addEventListener('start', () => { cameraInteracted = true; });
   function material(key, color, properties = {}) {
     if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({ color, roughness: .88, ...properties }));
@@ -67,7 +84,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   function clearContent() {
     content.traverse(object => { if (object.isInstancedMesh) object.dispose(); });
     content.clear(); geometries.forEach(g => g.dispose()); geometries.clear();
-    materials.forEach(m => m.dispose()); materials.clear(); textures.forEach(t => t.dispose()); textures.clear(); picks = []; textureJobs = [];
+    materials.forEach(m => m.dispose()); materials.clear(); textures.forEach(t => t.dispose()); textures.clear(); detailMaps.clear(); picks = []; textureJobs = [];
   }
   function finishMaterial(finish) {
     const key = `finish:${JSON.stringify(finish)}`;
@@ -93,8 +110,19 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
         }));
       }
     }
+    const kind = ['wood','chevron','herringbone','slats','panels'].includes(finish.pattern) ? 'wood' :
+      ['tiles','checker','terrazzo'].includes(finish.pattern) ? 'tiles' : finish.pattern === 'marble' ? 'stone' : 'plaster';
+    let bumpMap = null;
+    if (finish.pattern !== 'custom') {
+      const detailKey = `${kind}:${finish.scale}:${finish.rotation}`;
+      if (!detailMaps.has(detailKey)) {
+        const detail = detailTexture(kind, textures); detail.repeat.set(1 / finish.scale, 1 / finish.scale); detail.rotation = finish.rotation * Math.PI / 180; detailMaps.set(detailKey, normalTexture(detail, textures));
+      }
+      bumpMap = detailMaps.get(detailKey);
+    }
     const mat=material(key, finish.pattern === 'solid' || finish.pattern === 'custom' ? finish.color : '#ffffff', {
-      map, roughness: ['marble', 'tiles'].includes(finish.pattern) ? .42 : .88, side: THREE.DoubleSide
+      map, normalMap: bumpMap, normalScale: new THREE.Vector2(kind === 'tiles' ? .32 : kind === 'wood' ? .2 : .035, kind === 'tiles' ? .32 : kind === 'wood' ? .2 : .035),
+      roughness: ['marble', 'tiles','checker','terrazzo'].includes(finish.pattern) ? .27 : kind === 'wood' ? .5 : .88, side: THREE.DoubleSide
     });
     mat.name=finish.paint?`${finish.paint.brand} ${finish.paint.name} (${finish.paint.code})`:finish.tile?`${finish.tile.name} tiles (${finish.scale/2} x ${finish.scale/2} ft)`:`${finish.pattern} ${finish.color}`;return mat;
   }
@@ -124,6 +152,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio));
     renderer.shadowMap.enabled = quality !== 'fast';
     const size = quality === 'high' ? 2048 : large || mobile ? 512 : 1024;
+    aoEnabled = quality === 'high' || (quality === 'auto' && !mobile && !large);
     if (sun.shadow.mapSize.x !== size) { sun.shadow.map?.dispose(); sun.shadow.map = null; sun.shadow.mapSize.set(size, size); }
     renderer.shadowMap.needsUpdate = true;
   }
@@ -147,7 +176,9 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     const width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height || disposed) return;
     const changedAspect = Math.abs(camera.aspect - width / height) > .01;
-    applyQuality(); renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix();
+    applyQuality(); renderer.setSize(width, height, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(width, height);
+    const aoRatio = renderer.getPixelRatio() * (quality === 'high' ? .75 : .5); aoPass.setSize(Math.ceil(width * aoRatio), Math.ceil(height * aoRatio));
+    camera.aspect = width / height; camera.updateProjectionMatrix();
     if (!walking && !ceilingView && (!fitted || changedAspect)) fit(); schedule();
   }
   function build() {
@@ -156,6 +187,11 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     if (!window.FloorPlanGeometry.hasGeometry(plan)) { schedule(); return; }
     content.userData = { units: 'metres', wallView: walking || fullWalls ? 'full' : 'cutaway', ceilingVisible: walking || showCeiling };
     const building = plan;
+    const allFloors = window.FloorPlanGeometry.floorsOf(building), topFloor = allFloors.filter(f => f.plan?.walls?.length).at(-1)?.index;
+    const furnitureSurface = furnitureMaterials(materials, textures);
+    const shadowTexture = contactShadowTexture(textures);
+    const shadowGeometry = new THREE.PlaneGeometry(1, 1); geometries.add(shadowGeometry);
+    const contactMaterial = material('contact-shadow', '#ffffff', { map: shadowTexture, transparent: true, depthWrite: false, roughness: 1 });
     for (const floor of window.FloorPlanGeometry.floorsOf(building)) {
     const plan = floor.plan;
     if (!plan?.walls?.length) continue;
@@ -210,8 +246,8 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       geometries.add(geometry); const mesh = new THREE.Mesh(geometry, mat); mesh.name = 'Finished walls'; mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh);
     }
     for (const [key, boxes] of batches) {
-      const mat = key === 'glass' ? material('glass', '#adcfc7', { transparent: true, opacity: .35, roughness: .2, depthWrite: false }) :
-        key === 'door' ? material('door', '#a98158', { roughness: .68 }) :
+      const mat = key === 'glass' ? material('glass', '#d6e9ed', { transparent: true, opacity: .24, roughness: .08, depthWrite: false, metalness: .1 }) :
+        key === 'door' ? furnitureSurface('#a98158', 'wood') :
         key === 'frame' ? material('frame', '#425e67', { roughness: .45 }) : material('walls', '#e0e1d8');
       const mesh = new THREE.InstancedMesh(cube, mat, boxes.length);
       boxes.forEach((box, index) => {
@@ -232,6 +268,12 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     const ceiling = new THREE.Mesh(surfaceGeometry(footprint.width, footprint.depth), finishMaterial(plan.finishes?.ceiling || window.FloorPlanFinishes.DEFAULTS.ceiling));
     ceiling.name = 'Ceiling finish'; ceiling.rotation.x = Math.PI / 2; ceiling.position.set(footprint.x * FT, plan.height * FT, footprint.z * FT);
     ceiling.visible = walking || showCeiling; ceiling.receiveShadow = false; group.add(ceiling);
+    const details = architecturalDetails(plan, { material, geometries, fullWalls: walking || fullWalls, topFloor: floor.index === topFloor });
+    // Merge trim and hardware meshes to keep mobile draw calls bounded.
+    const detailBatches = new Map(); details.updateMatrixWorld(true);
+    details.traverse(object => { if (!object.isMesh) return; const copy = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone(); copy.applyMatrix4(object.matrixWorld); if (!detailBatches.has(object.material)) detailBatches.set(object.material, []); detailBatches.get(object.material).push(copy); });
+    for (const [mat, parts] of detailBatches) { const geometry = mergeGeometries(parts, false); parts.forEach(p => p.dispose()); if (geometry) { geometries.add(geometry); const mesh = new THREE.Mesh(geometry, mat); mesh.name = mat === materials.get('roof') ? 'Roof and parapets' : 'Skirting, reveals and door hardware'; mesh.castShadow = mesh.receiveShadow = true; group.add(mesh); } }
+    const contactParts = [];
 
     // Merge furniture by material after placing it. Rounded detail does not create a draw call for every cushion or leg.
     const furnitureBatches = new Map(), sourceGeometries = new Map(), originals = new Set();
@@ -239,8 +281,18 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       const w = item.width * FT, d = item.depth * FT;
       const model = furnitureModel({ id: String(index), type: typeMap[item.type] || item.type, w, h: d,
         x: (item.center[0] - .5) * width - w / 2, y: (item.center[1] - .5) * depth - d / 2,
-        rotation: item.rotation, color: colors[item.type] || '#b7a58b' }, materials, sourceGeometries);
+        rotation: item.rotation, height: item.height ? item.height * FT : undefined, roomHeight: plan.height * FT,
+        color: colors[item.type] || '#b7a58b' }, materials, sourceGeometries, furnitureSurface);
       model.updateMatrixWorld(true);
+      if (['lamp', 'ceiling_light'].includes(item.type) && group.children.filter(c => c.isPointLight).length < 4) {
+        const light = new THREE.PointLight('#ffe0ab', 12, 7, 2); light.name = 'Fitting light';
+        light.position.set((item.center[0] - .5) * width, item.type === 'lamp' ? 1.3 : plan.height * FT - .2, (item.center[1] - .5) * depth); group.add(light);
+      }
+      if (!['ceiling_light', 'rug'].includes(item.type)) {
+        const shadow = new THREE.Mesh(shadowGeometry, contactMaterial); shadow.rotation.x = -Math.PI / 2;
+        shadow.position.set((item.center[0] - .5) * width, .006, (item.center[1] - .5) * depth); shadow.scale.set(w * 1.4, d * 1.4, 1);
+        shadow.updateMatrix(); const part = shadowGeometry.clone(); part.applyMatrix4(shadow.matrix); contactParts.push(part);
+      }
       picks.push({ index, bounds: new THREE.Box3().setFromObject(model).translate(group.position) });
       model.traverse(object => {
         if (!object.isMesh) return;
@@ -251,6 +303,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       });
     });
     originals.forEach(geometry => geometry.dispose());
+    if (contactParts.length) { const geo = mergeGeometries(contactParts, false); contactParts.forEach(p => p.dispose()); if (geo) { geometries.add(geo); const mesh = new THREE.Mesh(geo, contactMaterial); mesh.name = 'Soft furniture contact shadows'; group.add(mesh); } }
     for (const [mat, parts] of furnitureBatches) {
       const geometry = mergeGeometries(parts, false); parts.forEach(p => p.dispose());
       if (!geometry) continue;
@@ -259,16 +312,16 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     }
     const bounds = new THREE.Box3().setFromObject(content), center = bounds.getCenter(new THREE.Vector3());
     const span = bounds.getSize(new THREE.Vector3()).length() + 3;
-    sun.target.position.copy(center); sun.position.copy(center).add(new THREE.Vector3(-span * .4, span * 1.2, span * .55));
+    sun.target.position.copy(center); sun.position.copy(center).add(new THREE.Vector3(-span * .85, span * .7, span * .5));
     Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: .1, far: span * 4 });
     sun.shadow.camera.updateProjectionMatrix(); renderer.shadowMap.needsUpdate = true;
-    applyQuality(); resize(); schedule();
+    applyLighting(); applyQuality(); resize(); schedule();
   }
   function update(next) {
     const dimensions = model => JSON.stringify(window.FloorPlanGeometry.floorsOf(model).map(f => [f.offsetX, f.offsetZ, f.elevation, f.plan?.width, f.plan?.depth, f.plan?.height]));
     const nextDimensions = dimensions(next), sizeChanged = dimensionFingerprint !== nextDimensions;
     dimensionFingerprint = nextDimensions;
-    const key = JSON.stringify(window.FloorPlanGeometry.floorsOf(next).map(f => [f.elevation, f.offsetX, f.offsetZ, f.slabThickness, f.plan?.width, f.plan?.depth, f.plan?.height, f.plan?.thickness, f.plan?.walls, f.plan?.furniture, f.plan?.finishes]));
+    const key = JSON.stringify(window.FloorPlanGeometry.floorsOf(next).map(f => [f.elevation, f.offsetX, f.offsetZ, f.slabThickness, f.plan?.width, f.plan?.depth, f.plan?.height, f.plan?.thickness, f.plan?.walls, f.plan?.furniture, f.plan?.finishes, f.plan?.presentation]));
     plan = next;
     if (key === fingerprint) return;
     walkCache.clear();
@@ -279,7 +332,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   function action(name) {
     if (!plan) return;
     if (name === 'walk') { if (walking) stopWalk(); else startWalk(); return walking; }
-    if (walking && name === 'reset') { prepareWalk(visibleFloor); canvas.focus({ preventScroll: true }); schedule(); return; }
+    if (walking && name === 'reset') { if (selectedView) focusView(selectedView.floor, selectedView.index); else prepareWalk(visibleFloor); canvas.focus({ preventScroll: true }); schedule(); return; }
     if (walking && ['walls', 'ceiling', 'left', 'right', 'up', 'down', 'in', 'out'].includes(name)) return;
     if (walking && ['top', 'ceiling-view'].includes(name)) stopWalk();
     if (name === 'walls') { fullWalls = !fullWalls; build(); return fullWalls; }
@@ -319,7 +372,34 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
     camera.position.set(x - bounds.width * FT * .15, elevation + Math.min(1.6, height * .6), z + bounds.depth * FT * .15);
     cameraInteracted = true; fitted = true; controls.update(); schedule();
   }
-  function viewState() { return { fullWalls, showCeiling, ceilingView, walking, visibleFloor }; }
+  function applyLighting() {
+    const floors = window.FloorPlanGeometry.floorsOf(plan);
+    const floor = floors.find(f => String(f.index) === visibleFloor) || floors[0];
+    const evening = (lightingOverride || floor?.plan?.presentation?.lighting) === 'evening';
+    sun.color.set(evening ? '#ffc486' : '#fff2db'); sun.intensity = evening ? .8 : 2.6;
+    hemisphere.intensity = evening ? .4 : .75; scene.environmentIntensity = evening ? .45 : .65;
+    scene.background.set(evening ? '#d9d3cc' : '#edf0eb');
+    content.traverse(object => { if (object.isPointLight) object.visible = evening; });
+    renderer.shadowMap.needsUpdate = true; schedule();
+  }
+  function roomViews() {
+    return window.FloorPlanGeometry.floorsOf(plan).flatMap(f => (f.plan?.presentation?.views || []).map((view, index) => ({ ...view, floor: f.index, floorName: f.name, index })));
+  }
+  function focusView(floorIndex, viewIndex) {
+    const floor = window.FloorPlanGeometry.floorsOf(plan).find(f => f.index === Number(floorIndex));
+    const view = floor?.plan?.presentation?.views?.[viewIndex]; if (!view) return false;
+    let prepared = walkCache.get(floor.index);
+    if (!prepared) { prepared = createWalkCollision(floor.plan, window.FloorPlanGeometry); walkCache.set(floor.index, prepared); }
+    const x = (view.center[0] - .5) * floor.plan.width * FT, z = (view.center[1] - .5) * floor.plan.depth * FT;
+    if (!prepared.canWalk(x, z)) { onError?.('This viewpoint is blocked by a wall or furnishing. Move its position to clear floor space in Architecture & tour.'); return false; }
+    if (!walking) startWalk();
+    if (!walking || !prepareWalk(String(floor.index))) return false;
+    selectedView = { floor: floor.index, index: Number(viewIndex) }; walkYaw = view.heading * Math.PI / 180; walkPitch = -.04;
+    camera.position.set(x + floor.offsetX * FT, floor.elevation * FT + prepared.eyeHeight, z + floor.offsetZ * FT);
+    camera.rotation.set(walkPitch, walkYaw, 0, 'YXZ'); camera.fov = 65; camera.updateProjectionMatrix();
+    build(); changedView(); canvas.focus({ preventScroll: true }); schedule(); return true;
+  }
+  function viewState() { return { fullWalls, showCeiling, ceilingView, walking, visibleFloor, selectedView, lighting: lightingOverride || window.FloorPlanGeometry.floorsOf(plan).find(f => String(f.index) === visibleFloor)?.plan?.presentation?.lighting || window.FloorPlanGeometry.floorsOf(plan)[0]?.plan?.presentation?.lighting || 'day' }; }
   function changedView() { onViewChange?.(viewState()); }
   function prepareWalk(value, preserve = false) {
     pressed.clear(); pointerStart = null;
@@ -348,7 +428,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   }
   function stopWalk(rebuild = true) {
     if (!walking) return;
-    walking = false; pressed.clear(); pointerStart = null; collision = null; walkFloor = null; controls.enabled = true;
+    walking = false; selectedView = null; pressed.clear(); pointerStart = null; collision = null; walkFloor = null; controls.enabled = true;
     if (savedOverview) {
       visibleFloor = savedOverview.visibleFloor; fullWalls = savedOverview.fullWalls; showCeiling = savedOverview.showCeiling;
       ceilingView = savedOverview.ceilingView; controls.maxPolarAngle = savedOverview.maxPolarAngle;
@@ -409,18 +489,20 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
   const intersection = new IntersectionObserver(entries => { visible = entries[0].isIntersecting; if (visible) schedule(); else { clearMovement(); cancelAnimationFrame(frame); frame = 0; } }); intersection.observe(canvas);
   resize();
   return {
-    update, action, move,
+    update, action, move, roomViews, focusView,
+    setLighting(value) { if (!['day', 'evening'].includes(value)) return; lightingOverride = value; applyLighting(); changedView(); },
     setFloor(value) {
+      selectedView = null;
       if (walking) { if (!prepareWalk(value, String(value) === visibleFloor)) { changedView(); return; } }
       else visibleFloor = String(value);
       content.children.forEach(group => { group.visible = visibleFloor === 'all' || String(group.userData.floorIndex) === visibleFloor; });
       if (!walking) { if (ceilingView) viewCeiling(); else if (!cameraInteracted) fit(); }
-      renderer.shadowMap.needsUpdate = true; changedView(); schedule();
+      applyLighting(); renderer.shadowMap.needsUpdate = true; changedView(); schedule();
     },
     setQuality(value) { if (!['auto', 'high', 'fast'].includes(value)) return; quality = value; resize(); },
-    getStats() { return { renderCount, buildCount, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, pixelRatio: renderer.getPixelRatio(), visible, lost, fullWalls, showCeiling, ceilingView, walking, walkFloor: walkFloor?.index ?? null, cameraPosition: camera.position.toArray(), cameraRotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z], pressedKeys: [...pressed], cameraDistance: camera.position.distanceTo(controls.target), boundsMetres: visibleBounds().getSize(new THREE.Vector3()).toArray(), floors: content.children.map(group => ({ name: group.name, elevation: group.position.y, visible: group.visible })) }; },
+    getStats() { return { renderCount, buildCount, drawCalls: renderer.info.render.calls, meshCount: content.children.reduce((n,g) => n + g.children.filter(c=>c.isMesh).length, 0), ambientOcclusion: aoEnabled, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, pixelRatio: renderer.getPixelRatio(), visible, lost, fullWalls, showCeiling, ceilingView, walking, walkFloor: walkFloor?.index ?? null, cameraPosition: camera.position.toArray(), cameraRotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z], pressedKeys: [...pressed], cameraDistance: camera.position.distanceTo(controls.target), boundsMetres: visibleBounds().getSize(new THREE.Vector3()).toArray(), floors: content.children.map(group => ({ name: group.name, elevation: group.position.y, visible: group.visible })) }; },
     getViewState: viewState,
-    async exportPNG() { await Promise.all(textureJobs); renderer.render(scene, camera); return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not capture the 3D view.')), 'image/png')); },
+    async exportPNG() { await Promise.all(textureJobs); drawScene(); return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not capture the 3D view.')), 'image/png')); },
     async exportGLB() { await Promise.all(textureJobs); return new GLTFExporter().parseAsync(content, { binary: true, onlyVisible: true }); },
     dispose() {
       disposed = true; cancelAnimationFrame(frame); resizeObserver.disconnect(); intersection.disconnect(); controls.dispose();
@@ -429,7 +511,7 @@ window.FloorPlanRenderer = function (canvas, { onSelectFurniture, onError, onRes
       canvas.removeEventListener('pointermove', pointermove); canvas.removeEventListener('pointercancel', cancelLook); canvas.removeEventListener('lostpointercapture', cancelLook); canvas.removeEventListener('blur', clearMovement);
       window.removeEventListener('keyup', keyup); window.removeEventListener('blur', clearMovement); walkCache.clear(); clearMovement();
       canvas.removeEventListener('webglcontextlost', contextlost); canvas.removeEventListener('webglcontextrestored', contextrestored);
-      clearContent(); sun.shadow.map?.dispose(); renderer.dispose(); renderer.forceContextLoss();
+      clearContent(); environment.dispose(); aoPass.dispose(); outputPass.dispose(); renderPass.dispose(); composer.dispose(); sun.shadow.map?.dispose(); renderer.dispose(); renderer.forceContextLoss();
     }
   };
 };
